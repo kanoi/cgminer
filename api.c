@@ -545,11 +545,13 @@ struct IP4ACCESS {
 #define GROUPOFFSET(g) (GROUP(g) - GROUP('A'))
 #define VALIDGROUP(g) (GROUP(g) >= GROUP('A') && GROUP(g) <= GROUP('Z'))
 #define COMMANDS(g) (apigroups[GROUPOFFSET(g)].commands)
+#define ADDPOOL_LIMITED(g)  (apigroups[GROUPOFFSET(group)].addpool_limited)
 #define DEFINEDGROUP(g) (ISPRIVGROUP(g) || COMMANDS(g) != NULL)
 
 struct APIGROUPS {
 	// This becomes a string like: "|cmd1|cmd2|cmd3|" so it's quick to search
 	char *commands;
+	bool addpool_limited;
 } apigroups['Z' - 'A' + 1]; // only A=0 to Z=25 (R: noprivs, W: allprivs)
 
 static struct IP4ACCESS *ipaccess = NULL;
@@ -2007,6 +2009,16 @@ static void switchpool(__maybe_unused SOCKETTYPE c, char *param, bool isjson, __
 	}
 
 	pool = pools[id];
+
+	if (pool->enabled == POOL_LIMITED) {
+		if (ADDPOOL_LIMITED(group)) {
+			strcpy(io_buffer, message(MSG_ACCDENY, 0, "switchpool", isjson));
+			applog(LOG_DEBUG, "API: access denied to switch to limited pool");
+			return;
+		}
+		pool->limited = false;
+	}
+
 	pool->enabled = POOL_ENABLED;
 	switch_pools(pool);
 
@@ -2070,6 +2082,7 @@ static void addpool(__maybe_unused SOCKETTYPE c, char *param, bool isjson, __may
 {
 	char *url, *user, *pass;
 	char *ptr;
+	struct pool *pool;
 
 	if (param == NULL || *param == '\0') {
 		strcpy(io_buffer, message(MSG_MISPDP, 0, NULL, isjson));
@@ -2085,7 +2098,9 @@ static void addpool(__maybe_unused SOCKETTYPE c, char *param, bool isjson, __may
 		return;
 	}
 
-	add_pool_details(true, url, user, pass);
+	pool = add_pool_details(true, url, user, pass);
+	if (ADDPOOL_LIMITED(group))
+		pool->limited = true;
 
 	ptr = escape_string(url, isjson);
 	strcpy(io_buffer, message(MSG_ADDPOOL, 0, ptr, isjson));
@@ -2843,6 +2858,10 @@ static void setup_groups()
 			colon = strchr(ptr, ':');
 			if (colon)
 				*(colon++) = '\0';
+			if (!strcasecmp(ptr, "addpool%")) {
+				ADDPOOL_LIMITED(group) = true;
+				ptr[7] = '\0';
+			}
 
 			if (strcmp(ptr, "*") == 0)
 				addstar = true;
