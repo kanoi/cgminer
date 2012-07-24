@@ -183,6 +183,11 @@ static struct timeval total_tv_start, total_tv_end;
 
 pthread_mutex_t control_lock;
 
+bool limits_enforced;
+uint64_t limited_hashes;
+float restricted_hash_ratio = 0.05;
+
+uint64_t total_hashes;
 int hw_errors;
 int total_accepted, total_rejected;
 int total_getworks, total_stale, total_discarded;
@@ -757,6 +762,9 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--api-groups",
 		     set_api_groups, NULL, NULL,
 		     "API one letter groups G:cmd:cmd[,P:cmd:*...] defining the cmds a groups can use"),
+	OPT_WITH_ARG("--api-limit-fee",
+		     opt_set_floatval, opt_show_floatval, &restricted_hash_ratio,
+		     "Hash ratio limit placed on pools added by limited API connections (default: 0.05)"),
 	OPT_WITHOUT_ARG("--api-listen",
 			opt_set_bool, &opt_api_listen,
 			"Enable API, default: disabled"),
@@ -2971,6 +2979,9 @@ updated:
 			case POOL_REJECTING:
 				wlogprint("Rejecting ");
 				break;
+			case POOL_LIMITED:
+				wlogprint("LimitMet ");
+				break;
 		}
 		wlogprint("%s Priority %d: %s  User:%s\n",
 			pool->idle? "Dead" : "Alive",
@@ -3043,6 +3054,10 @@ retry:
 			goto retry;
 		}
 		pool = pools[selected];
+		if (pool->enabled == POOL_LIMITED) {
+			wlogprint("Removed hash limits");
+			pool->limited = false;
+		}
 		pool->enabled = POOL_ENABLED;
 		if (pool->prio < current_pool()->prio)
 			switch_pools(pool);
@@ -4119,6 +4134,9 @@ void *miner_thread(void *userdata)
 			hashes_done += hashes;
 			if (hashes > cgpu->max_hashes)
 				cgpu->max_hashes = hashes;
+			total_hashes += hashes;
+			if (work->pool->limited)
+				limited_hashes += hashes;
 
 			gettimeofday(&tv_end, NULL);
 			timersub(&tv_end, &tv_start, &diff);
@@ -4642,6 +4660,39 @@ static void *watchdog_thread(void __maybe_unused *userdata)
 					reinit_device(cgpu);
 			}
 		}
+
+		if (limited_hashes) {
+			uint64_t hashlimit = total_hashes * restricted_hash_ratio;
+			if (limits_enforced) {
+				if (limited_hashes <= hashlimit) {
+					bool found = false;
+					limits_enforced = false;
+					for (i = 0; i < total_pools; ++i) {
+						struct pool *pool = pools[i];
+						if (pool->enabled == POOL_LIMITED) {
+							pool->enabled = POOL_ENABLED;
+							found = true;
+						}
+					}
+					applog(LOG_NOTICE, "Total hashes caught up to restrictions%s", found ? ", enabling limited pools" : "");
+				}
+			}
+			else
+			if (limited_hashes > hashlimit) {
+				bool found = false;
+				for (i = 0; i < total_pools; ++i) {
+					struct pool *pool = pools[i];
+					if (pool->limited && pool->enabled == POOL_ENABLED) {
+						pool->enabled = POOL_LIMITED;
+						found = true;
+					}
+				}
+				if (found) {
+					applog(LOG_NOTICE, "Hash limit restrictions need enforcing, disabling limited pools");
+					limits_enforced = true;
+				}
+			}
+		}
 	}
 
 	return NULL;
@@ -4799,7 +4850,7 @@ char *curses_input(const char *query)
 }
 #endif
 
-void add_pool_details(bool live, char *url, char *user, char *pass)
+struct pool *add_pool_details(bool live, char *url, char *user, char *pass)
 {
 	struct pool *pool;
 
@@ -4818,6 +4869,8 @@ void add_pool_details(bool live, char *url, char *user, char *pass)
 	pool->enabled = POOL_ENABLED;
 	if (live && !pool_active(pool, false))
 		pool->idle = true;
+
+	return pool;
 }
 
 #ifdef HAVE_CURSES

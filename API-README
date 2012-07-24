@@ -43,6 +43,9 @@ A sample API group would be:
 This would create a group 'P' that can do all current pool commands and all
 non-priviliged commands - the '*' means all non-priviledged commands
 Without the '*' the group would only have access to the pool commands
+If the addpool command is listed followed by a percent symbol ('%'), all pools
+added by this group will be limited (overall) to the hashrate ratio specified
+by the "--api-fee-limit" option.
 Defining multiple groups example:
  --api-groups Q:quit:restart:*,S:save
 This would define 2 groups:

@@ -599,7 +599,7 @@ extern void api(int thr_id);
 
 extern struct pool *current_pool(void);
 extern int active_pools(void);
-extern void add_pool_details(bool live, char *url, char *user, char *pass);
+extern struct pool *add_pool_details(bool live, char *url, char *user, char *pass);
 
 #define MAX_GPUDEVICES 16
 
@@ -681,6 +681,7 @@ enum pool_enable {
 	POOL_ENABLED,
 	POOL_DISABLED,
 	POOL_REJECTING,
+	POOL_LIMITED,
 };
 
 struct pool {
@@ -697,6 +698,7 @@ struct pool {
 	enum pool_enable enabled;
 	bool submit_old;
 	bool removed;
+	bool limited;
 	bool lp_started;
 
 	char *hdr_path;
