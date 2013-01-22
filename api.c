@@ -3899,6 +3899,9 @@ void api(int api_thr_id)
 						}
 					}
 
+				if (isjson)
+					json_decref(json_config);
+
 				if (!did) {
 					message(io_data, MSG_INVCMD, 0, NULL, isjson);
 					send_result(io_data, c, isjson);
