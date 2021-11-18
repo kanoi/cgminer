@@ -2568,11 +2568,10 @@ static char *opt_verusage_and_exit(const char *extra)
 		"ant.S1 "
 #endif
 #ifdef USE_ANT_S2
+		"ant.S2"
+#endif
 #ifdef USE_ANT_S3
 		"ant.S3 "
-#else
-		"ant.S2 "
-#endif
 #endif
 #ifdef USE_AVALON
 		"avalon "
@@ -2609,6 +2608,9 @@ static char *opt_verusage_and_exit(const char *extra)
 #endif
 #ifdef USE_DRILLBIT
                 "drillbit "
+#endif
+#ifdef USE_DRAGONMINT_T1
+		"dragonmint_t1 "
 #endif
 #ifdef USE_GEKKO
 		"gekko "
