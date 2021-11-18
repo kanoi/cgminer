@@ -87,7 +87,7 @@ esac
 #^ causes problem on gcc 4.9 - pass in from CFLAG if needed
 
 #add CFLAGS "-fcommon" otherwise cause issue compilation on gcc 10.x (raspberry BullEyes)
-CFLAGS+=" -fcommon"
+CFLAGS+=" -std=gnu11 -fcommon"
 
 case $target in
   *-*-linux-gnu*)
@@ -815,11 +815,6 @@ echo "  curses.TUI...........: $cursesmsg"
 
 
 echo
-if test "x$dragonmint_t1" = xyes; then
-	echo "  DragonMint.T1.Halong.: Enabled"
-else
-        echo "  DragonMint.T1.Halong.: Disabled"
-fi
 
 if test "x$ants1" = xyes; then
 	echo "  Antminer.S1.Bitmain..: Enabled"
@@ -912,11 +907,10 @@ else
 fi
 
 if test "x$bitmain_soc" = xyes; then
-	echo "  Bitmain.ASICs......: Enabled"
+	echo "  Bitmain.ASICs........: Enabled"
 else
-	echo "  Bitmain.ASICs......: Disabled"
+	echo "  Bitmain.ASICs........: Disabled"
 fi
-
 
 if test "x$blockerupter" = xyes; then
 	echo "  BlockErupter.ASICs...: Enabled"
