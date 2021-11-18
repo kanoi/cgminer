@@ -586,7 +586,7 @@ if test "x$curses" = "xno"; then
 else
 	AC_SEARCH_LIBS(setupterm, pdcurses ncurses pdcurses, [
 		curses=yes
-		cursesmsg="FOUND: ${ac_cv_search_addstr}"
+		cursesmsg="FOUND: ${ac_cv_search_setupterm}"
 		AC_DEFINE([HAVE_CURSES], [1], [Defined to 1 if curses TUI support is wanted])
 	], [
 		if test "x$curses" = "xyes"; then
