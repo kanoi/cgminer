@@ -1746,6 +1746,9 @@ static struct opt_table opt_config_table[] = {
 		     "Override avalon-options for BitBurner Fury boards baud:miners:asic:timeout:freq"),
 #endif
 #if defined(USE_ANT_S1) || defined(USE_ANT_S2)
+	OPT_WITHOUT_ARG("--bitmain-auto",
+			opt_set_bool, &opt_bitmain_auto,
+			"Adjust bitmain overclock frequency dynamically for best hashrate"),
 	OPT_WITH_ARG("--bitmain-cutoff",
 		     set_int_0_to_100, opt_show_intval, &opt_bitmain_overheat,
 		     "Set bitmain overheat cut off temperature"),
@@ -1772,28 +1775,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--bitmain-workdelay",
 		     set_int_0_to_100, opt_show_intval, &opt_bitmain_workdelay,
 		     "Set bitmain work delay (ms) 0-100"),
-	// Ignored
-	OPT_WITHOUT_ARG("--bitmain-auto",
-			opt_set_bool, &opt_bitmain_auto,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-nobeeper",
-			opt_set_bool, &opt_bitmain_nobeeper,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-notempoverctrl",
-			opt_set_bool, &opt_bitmain_notempoverctrl,
-			opt_hidden),
-#ifdef USE_ANT_S1
-	// S1 has no effect
-	OPT_WITHOUT_ARG("--bitmainbeeper",
-			opt_set_bool, &opt_bitmain_beeper,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmaintempoverctrl",
-			opt_set_bool, &opt_bitmain_tempoverctrl,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-homemode",
-			opt_set_bool, &opt_bitmain_homemode,
-			opt_hidden),
-#endif
 #endif
 #ifdef USE_ANT_S2
 	OPT_WITH_ARG("--bitmain-voltage",
@@ -1816,9 +1797,16 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--bitmaintempoverctrl",
 			opt_set_bool, &opt_bitmain_tempoverctrl,
 			"Set bitmain stop runing when temprerature is over 80 degree Celsius"),
+	// Ignored
+	OPT_WITHOUT_ARG("--bitmain-nobeeper",
+			opt_set_bool, &opt_bitmain_nobeeper,
+			opt_hidden),
+	OPT_WITHOUT_ARG("--bitmain-notempoverctrl",
+			opt_set_bool, &opt_bitmain_notempoverctrl,
+			opt_hidden),
 	OPT_WITHOUT_ARG("--bitmain-homemode",
 			opt_set_bool, &opt_bitmain_homemode,
-			"Set bitmain miner to home mode"),
+			opt_hidden),
 #endif
 #ifdef USE_BITMINE_A1
 	OPT_WITH_ARG("--bitmine-a1-options",
