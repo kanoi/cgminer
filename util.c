@@ -3545,7 +3545,7 @@ retry:
 	ret = write(cgsem->pipefd[1], &buf, 1);
 	if (unlikely(ret == 0))
 		applog(LOG_WARNING, "Failed to write errno=%d" IN_FMT_FFL, errno, file, func, line);
-	else if (unlikely(ret < 0 && interrupted))
+	else if (unlikely(ret < 0 && interrupted()))
 		goto retry;
 }
 
@@ -3557,7 +3557,7 @@ retry:
 	ret = read(cgsem->pipefd[0], &buf, 1);
 	if (unlikely(ret == 0))
 		applog(LOG_WARNING, "Failed to read errno=%d" IN_FMT_FFL, errno, file, func, line);
-	else if (unlikely(ret < 0 && interrupted))
+	else if (unlikely(ret < 0 && interrupted()))
 		goto retry;
 }
 

@@ -152,11 +152,12 @@ struct bitmain_txconfig_token {
 	uint8_t chain_check_time_eft :1;
 	uint8_t chip_config_eft      :1;
 	uint8_t hw_error_eft         :1;
+#ifdef USE_ANT_S1
+	uint8_t reserved1;
+#else // S2
 	uint8_t beeper_ctrl          :1;
 	uint8_t temp_over_ctrl       :1;
-	uint8_t fan_home_mode        :1;
-	uint8_t reserved1            :5;
-#ifndef USE_ANT_S1
+	uint8_t reserved1            :6;
 	uint8_t chain_check_time;
 	uint8_t reserved2;
 #endif
@@ -304,66 +305,6 @@ struct bitmain_rxnonce_data {
 #endif
 } __attribute__((packed, aligned(4)));
 
-/* how many usec stats ranges
- * [0] for a call that didn't process
- * [1] to [PROFILE_STATS] for less than NxPROFILE_STEP_USEC
- * [PROFILE_STATS+1] for > PROFILE_STATSxPROFILE_STEP_USEC */
-#define PROFILE_STATS 10
-#define PROFILE_STEP_USEC 200
-
-// set to 0/1 to disable/enable updating the stats
-#if 1
-#define PROFILE_START(_stt) cgtime(&(_stt))
-#define PROFILE_ZERO(_ranges) (_ranges)[0]++
-#define PROFILE_FINISH(_stt, _count, _total, _ranges) do { \
-		struct timeval _fin; \
-		int64_t _tot, _range; \
-		cgtime(&(_fin)); \
-		(_count)++; \
-		_tot = _fin.tv_usec - (_stt).tv_usec; \
-		_tot += ((_fin.tv_sec - (_stt).tv_sec) * 1000000); \
-		(_total) += _tot; \
-		_range = _tot / PROFILE_STEP_USEC; \
-		if (_range < 0) \
-			_range = 0; \
-		else if (_range > PROFILE_STATS) \
-			_range = PROFILE_STATS; \
-		(_ranges)[(int)(_range+1)]++; \
-	} while(0)
-#define PROFILE_FINISH2(_stt, _count, _total, _total2, _ranges, _ranges2, _delta) do { \
-		struct timeval _fin; \
-		int64_t _tot, _range; \
-		cgtime(&(_fin)); \
-		(_count)++; \
-		_tot = _fin.tv_usec - (_stt).tv_usec; \
-		_tot += ((_fin.tv_sec - (_stt).tv_sec) * 1000000); \
-		(_total) += _tot; \
-		_range = _tot / PROFILE_STEP_USEC; \
-		if (_range < 0) \
-			_range = 0; \
-		else if (_range > PROFILE_STATS) \
-			_range = PROFILE_STATS; \
-		(_ranges)[(int)(_range+1)]++; \
-		_tot -= _delta; \
-		(_total2) += _tot; \
-		_range = _tot / PROFILE_STEP_USEC; \
-		if (_range < 0) \
-			_range = 0; \
-		else if (_range > PROFILE_STATS) \
-			_range = PROFILE_STATS; \
-		(_ranges2)[(int)(_range+1)]++; \
-	} while(0)
-#else
-// Avoid gcc warnings
-#define PROFILE_START(_stt) do { \
-		if ((_stt).tv_sec != 0L) \
-			(_stt).tv_sec = 0L; \
-	} while (0)
-#define PROFILE_ZERO(_ranges) (_ranges)[0] = 0L
-#define PROFILE_FINISH(_stt, _count, _total, _ranges) _count = 0L
-#define PROFILE_FINISH2(_stt, _count, _total, _total2, _ranges, _ranges2, _delta) _count = 0L
-#endif
-
 struct bitmain_info {
 	int queued;
 	int results;
@@ -468,24 +409,17 @@ struct bitmain_info {
 	uint64_t max_failed;
 
 	uint64_t fill_calls;
-	uint64_t fill_loop_count[BITMAIN_MAX_WORK_NUM+1];
-	int64_t fill_usec_count;
-	int64_t fill_usec;
-	int64_t fill_usec_ranges[PROFILE_STATS+2];
 	uint64_t fill_nospace;
 	uint64_t fifo_checks;
 	uint64_t fill_neededless;
 	uint64_t fill_totalneeded;
 	uint64_t fill_need[BITMAIN_MAX_WORK_NUM+1];
 	uint64_t fill_want;
-	bool got_work;
-	uint64_t fill_start_nowork;
 	uint64_t fill_nowork;
 	uint64_t fill_roll;
 	int fill_rollmin;
 	int fill_rollmax;
 	uint64_t fill_rolltot;
-	uint64_t fill_rolllimit;
 	uint64_t fill_toosmall;
 	uint64_t fill_less;
 	uint64_t fill_sends;
@@ -494,31 +428,16 @@ struct bitmain_info {
 	uint64_t fill_sendless[BITMAIN_MAX_WORK_NUM+1];
 	uint64_t fill_seterr;
 	uint64_t fill_senderr;
-	uint64_t fill_sleepsa;
-	uint64_t fill_sleepsb;
 	uint64_t need_over;
 	uint64_t need_nowork[BITMAIN_MAX_WORK_NUM+1];
 	uint64_t fill_sendstatus;
-	int64_t fill_stat_usec_count;
-	int64_t fill_stat_usec;
-	int64_t fill_stat_usec_ranges[PROFILE_STATS+2];
 	uint64_t read_good;
 	uint64_t read_size;
-	uint64_t read_0s;
 	uint64_t read_18s;
 	int read_sizemin;
 	int read_sizemax;
 	uint64_t read_bad;
 	uint64_t readbuf_over;
-	uint64_t get_results;
-	uint64_t get_sleepsa;
-	uint64_t get_sleepsb;
-	uint64_t get_sleepsc;
-	int64_t get_usec_count;
-	int64_t get_usec;
-	int64_t get_usec_ranges[PROFILE_STATS+2];
-	int64_t get_usec2;
-	int64_t get_usec2_ranges[PROFILE_STATS+2];
 };
 
 // Work
@@ -528,7 +447,7 @@ typedef struct witem {
 } WITEM;
 
 #ifdef USE_ANT_S1
-#define ALLOC_WITEMS 4096
+#define ALLOC_WITEMS 1024
 #else
 #ifdef USE_ANT_S3
 #define ALLOC_WITEMS 4096
@@ -540,7 +459,15 @@ typedef struct witem {
  * The limit doesn't matter since we simply take the tail item
  * every time, optionally free it, and then put it on the head
  */
-#define LIMIT_WITEMS ALLOC_WITEMS
+#ifdef USE_ANT_S1
+#define LIMIT_WITEMS 1024
+#else
+#ifdef USE_ANT_S3
+#define LIMIT_WITEMS 4096
+#else // S2
+#define LIMIT_WITEMS 32768
+#endif
+#endif
 
 #define DATAW(_item) ((WITEM *)(_item->data))
 
@@ -559,38 +486,14 @@ typedef struct witem {
 #define ASSERT1(condition) __maybe_unused static char sizeof_uint32_t_must_be_4[(condition)?1:-1]
 ASSERT1(sizeof(uint32_t) == 4);
 
-// All command options
-
-extern char *opt_bitmain_options;
-extern char *opt_set_bitmain_fan;
-extern char *opt_bitmain_freq;
-// Ignored
-extern bool opt_bitmain_nobeeper;
-extern bool opt_bitmain_notempoverctrl;
-
-#ifdef USE_ANT_S2
-extern bool opt_bitmain_checkall;
-extern bool opt_bitmain_checkn2diff;
-#ifndef USE_ANT_S3
-extern char *opt_bitmain_dev;
-#endif
-extern char *opt_bitmain_voltage;
-#endif
-
 extern struct bitmain_info **bitmain_info;
-extern bool opt_bitmain_hwerror;
-#ifdef USE_ANT_S2
-extern bool opt_bitmain_checkall;
-extern bool opt_bitmain_checkn2diff;
-#endif
-extern bool opt_bitmain_beeper;
-extern bool opt_bitmain_tempoverctrl;
-extern bool opt_bitmain_homemode;
 extern int opt_bitmain_temp;
 extern int opt_bitmain_workdelay;
 extern int opt_bitmain_overheat;
 extern int opt_bitmain_fan_min;
 extern int opt_bitmain_fan_max;
+extern int opt_bitmain_freq_min;
+extern int opt_bitmain_freq_max;
 extern bool opt_bitmain_auto;
 extern char *set_bitmain_fan(char *arg);
 

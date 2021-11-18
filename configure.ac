@@ -813,7 +813,6 @@ fi
 
 echo "  curses.TUI...........: $cursesmsg"
 
-
 echo
 
 if test "x$ants1" = xyes; then

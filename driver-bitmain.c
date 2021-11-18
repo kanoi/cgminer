@@ -59,27 +59,13 @@ static void ants2_detect(__maybe_unused bool hotplug)
 
 #define BITMAIN_CALC_DIFF1	1
 
-char *opt_bitmain_options;
-char *opt_set_bitmain_fan;
-char *opt_bitmain_freq;
-// Ignored
-bool opt_bitmain_nobeeper;
-bool opt_bitmain_notempoverctrl;
-
+bool opt_bitmain_hwerror = false;
 #ifdef USE_ANT_S2
 bool opt_bitmain_checkall = false;
 bool opt_bitmain_checkn2diff = false;
-#ifndef USE_ANT_S3
-char *opt_bitmain_dev;
-#endif
-char *opt_bitmain_voltage = BITMAIN_VOLTAGE_DEF;
-#endif
-
-
-bool opt_bitmain_hwerror = false;
 bool opt_bitmain_beeper = false;
 bool opt_bitmain_tempoverctrl = false;
-bool opt_bitmain_homemode = false;
+#endif
 int opt_bitmain_temp = BITMAIN_TEMP_TARGET;
 int opt_bitmain_workdelay = BITMAIN_WORK_DELAY;
 int opt_bitmain_overheat = BITMAIN_TEMP_OVERHEAT;
@@ -208,9 +194,9 @@ static uint32_t num2bit(int num)
 }
 
 #ifdef USE_ANT_S1
-static bool get_options(__maybe_unused int this_option_offset, int *baud,
-			int *chain_num, int *asic_num, int *timeout,
-			int *frequency, uint8_t *reg_data)
+static bool get_options(int this_option_offset, int *baud, int *chain_num,
+			int *asic_num, int *timeout, int *frequency,
+			uint8_t *reg_data)
 {
 	char buf[BUFSIZ+1];
 	char *ptr, *comma, *colon, *colon2, *colon3, *colon4, *colon5;
@@ -422,14 +408,24 @@ static bool get_options(__maybe_unused int this_option_offset, int *baud,
 }
 #endif
 
+#ifdef USE_ANT_S1
+static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
+				uint8_t reset, uint8_t fan_eft, uint8_t timeout_eft, uint8_t frequency_eft,
+				uint8_t voltage_eft, uint8_t chain_check_time_eft, uint8_t chip_config_eft,
+				uint8_t hw_error_eft, uint8_t chain_num, uint8_t asic_num,
+				uint8_t fan_pwm_data, uint8_t timeout_data,
+				uint16_t frequency, uint8_t voltage, uint8_t chain_check_time,
+				uint8_t chip_address, uint8_t reg_address, uint8_t * reg_data)
+#else
 static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
 				uint8_t reset, uint8_t fan_eft, uint8_t timeout_eft, uint8_t frequency_eft,
 				uint8_t voltage_eft, uint8_t chain_check_time_eft, uint8_t chip_config_eft,
 				uint8_t hw_error_eft, uint8_t beeper_ctrl, uint8_t temp_over_ctrl,
-				uint8_t home_mode, uint8_t chain_num, uint8_t asic_num,
+				uint8_t chain_num, uint8_t asic_num,
 				uint8_t fan_pwm_data, uint8_t timeout_data,
 				uint16_t frequency, uint8_t *voltage, uint8_t chain_check_time,
 				uint8_t chip_address, uint8_t reg_address, uint8_t * reg_data)
+#endif
 {
 	uint16_t crc = 0;
 	int datalen = 0;
@@ -470,14 +466,12 @@ static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
 	bm->chip_config_eft = chip_config_eft;
 	bm->hw_error_eft = hw_error_eft;
 
-	// S1 doesn't use them, but avoid gcc warnings
-	bm->beeper_ctrl = beeper_ctrl;
-	bm->temp_over_ctrl = temp_over_ctrl;
-	bm->fan_home_mode = home_mode;
-
 #ifdef USE_ANT_S1
 	sendbuf[2] = bitswap(sendbuf[2]);
 #else
+	bm->beeper_ctrl = beeper_ctrl;
+	bm->temp_over_ctrl = temp_over_ctrl;
+
 	sendbuf[4] = bitswap(sendbuf[4]);
 	sendbuf[5] = bitswap(sendbuf[5]);
 #endif
@@ -489,7 +483,7 @@ static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
 
 	bm->frequency = htole16(frequency);
 #ifdef USE_ANT_S1
-	bm->voltage = voltage[0];
+	bm->voltage = voltage;
 #else
 	bm->voltage[0] = voltage[0];
 	bm->voltage[1] = voltage[1];
@@ -513,13 +507,13 @@ static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
 			(int)reset, (int)fan_eft, (int)timeout_eft, (int)frequency_eft,
 			(int)voltage_eft, (int)chain_check_time_eft, (int)chip_config_eft,
 			(int)hw_error_eft, (int)chain_num, (int)asic_num, (int)fan_pwm_data,
-			(int)timeout_data, (int)frequency, (int)voltage[0], (int)chain_check_time,
+			(int)timeout_data, (int)frequency, (int)voltage, (int)chain_check_time,
 			(int)reg_data[0], (int)reg_data[1], (int)reg_data[2], (int)reg_data[3],
 			(int)chip_address, (int)reg_address, (int)crc);
 #else
 	applogsiz(LOG_DEBUG, 512, "%s: %s() v(%d) reset(%d) faneft(%d) touteft(%d) freqeft(%d)"
 			" volteft(%d) chainceft(%d) chipceft(%d) hweft(%d)"
-			" beepctrl(%d) toverctl(%d) home(%d) mnum(%d)"
+			" beepctrl(%d) toverctl(%d) mnum(%d)"
 			" anum(%d) fanpwmdata(%d) toutdata(%d) freq(%d) volt(%02x%02x)"
 			" chainctime(%d) regdata(%02x%02x%02x%02x) chipaddr(%02x)"
 			" regaddr(%02x) crc(%04x)",
@@ -527,9 +521,8 @@ static int bitmain_set_txconfig(struct bitmain_txconfig_token *bm,
 			(int)version, (int)reset, (int)fan_eft, (int)timeout_eft,
 			(int)frequency_eft, (int)voltage_eft, (int)chain_check_time_eft,
 			(int)chip_config_eft, (int)hw_error_eft, (int)beeper_ctrl,
-			(int)temp_over_ctrl, (int)home_mode, (int)chain_num, (int)asic_num,
-			(int)fan_pwm_data, (int)timeout_data, (int)frequency,
-			(int)voltage[0], (int)voltage[1],
+			(int)temp_over_ctrl, (int)chain_num, (int)asic_num, (int)fan_pwm_data,
+			(int)timeout_data, (int)frequency, (int)voltage[0], (int)voltage[1],
 			(int)chain_check_time, (int)reg_data[0], (int)reg_data[1],
 			(int)reg_data[2], (int)reg_data[3], (int)chip_address,
 			(int)reg_address, (int)crc);
@@ -1759,14 +1752,10 @@ static void *bitmain_get_results(void *userdata)
 	struct thr_info *thr = info->thr;
 	char threadname[24];
 	int errorcount = 0;
-	struct timeval stt;
-	int64_t delta;
 
 	snprintf(threadname, 24, "btm_recv/%d", bitmain->device_id);
 	RenameThread(threadname);
 
-	delta = 0;
-	PROFILE_START(stt);
 	while (likely(!bitmain->shutdown)) {
 		unsigned char buf[rsize];
 
@@ -1774,18 +1763,9 @@ static void *bitmain_get_results(void *userdata)
 				  bitmain->drv->name, bitmain->device_id, __func__, offset);
 
 		if (offset >= (int)BITMAIN_READ_SIZE) {
-			info->get_results++;
 			applog(LOG_DEBUG, "%s%d: %s() start",
 					  bitmain->drv->name, bitmain->device_id, __func__);
-			PROFILE_FINISH2(stt, info->get_usec_count,
-					info->get_usec,
-					info->get_usec2,
-					info->get_usec_ranges,
-					info->get_usec2_ranges,
-					delta);
 			bitmain_parse_results(bitmain, info, thr, (uint8_t *)readbuf, &offset);
-			delta = 0;
-			PROFILE_START(stt);
 			applog(LOG_DEBUG, "%s%d: %s() stop",
 					  bitmain->drv->name, bitmain->device_id, __func__);
 		}
@@ -1806,9 +1786,7 @@ static void *bitmain_get_results(void *userdata)
 
 #ifdef USE_ANT_S1
 		// 2ms shouldn't be too much
-		info->get_sleepsa++;
 		cgsleep_ms(2);
-		delta += 2000;
 #endif
 
 		applog(LOG_DEBUG, "%s%d: %s() read",
@@ -1827,17 +1805,12 @@ static void *bitmain_get_results(void *userdata)
 #endif
 //				applog(LOG_ERR, "%s%d: read errorcount>100 ret=%d",
 //						bitmain->drv->name, bitmain->device_id, ret);
-				info->get_sleepsb++;
 				cgsleep_ms(20);
-				delta += 20000;
 				errorcount = 0;
 			}
 #ifndef USE_ANT_S1
-			if (errorcount > 0) {
-				info->get_sleepsc++;
+			if (errorcount > 0)
 				cgsleep_ms(1);
-				delta += 1000;
-			}
 #endif
 			continue;
 		}
@@ -1858,8 +1831,6 @@ static void *bitmain_get_results(void *userdata)
 				info->read_sizemax = ret;
 		}
 		info->read_good++;
-		if (ret == 0)
-			info->read_0s++;
 		if (ret == 18)
 			info->read_18s++;
 		memcpy(readbuf+offset, buf, ret);
@@ -1915,12 +1886,13 @@ static int bitmain_initialize(struct cgpu_info *bitmain)
 	struct bitmain_rxstatus_data rxstatusdata;
 	int i = 0, j = 0, m = 0, statusok = 0;
 	uint32_t checkbit = 0x00000000;
+#ifdef USE_ANT_S1
+	int eft = 0;
+#else
+	int r = 0;
 	int hwerror_eft = 0;
 	int beeper_ctrl = 1;
 	int tempover_ctrl = 1;
-	int home_mode = 0;
-#ifndef USE_ANT_S1
-	int r = 0;
 	struct bitmain_packet_head packethead;
 	int asicnum = 0;
 
@@ -2169,7 +2141,19 @@ static int bitmain_initialize(struct cgpu_info *bitmain)
 	if (statusok) {
 		applog(LOG_ERR, "%s%d: %s() set_txconfig",
 				bitmain->drv->name, bitmain->device_id, __func__);
+#ifdef USE_ANT_S1
+		if (opt_bitmain_hwerror)
+			eft = 1;
+		else
+			eft = 0;
 
+		sendlen = bitmain_set_txconfig((struct bitmain_txconfig_token *)sendbuf,
+						1, 1, 1, 1, 1, 0, 1, eft,
+						info->chain_num, info->asic_num,
+						BITMAIN_DEFAULT_FAN_MAX_PWM, info->timeout,
+						info->frequency, BITMAIN_DEFAULT_VOLTAGE,
+						0, 0, 0x04, info->reg_data);
+#else // S2
 		if (opt_bitmain_hwerror)
 			hwerror_eft = 1;
 		else
@@ -2182,24 +2166,15 @@ static int bitmain_initialize(struct cgpu_info *bitmain)
 			tempover_ctrl = 1;
 		else
 			tempover_ctrl = 0;
-		if (opt_bitmain_homemode)
-			home_mode = 1;
-		else
-			home_mode = 0;
 
-#ifdef USE_ANT_S1
-		uint8_t _voltage[2] = { BITMAIN_DEFAULT_VOLTAGE, 0 };
-#else
-		uint8_t _voltage[2] = { info->voltage[0], info->voltage[1] };
-#endif
 		sendlen = bitmain_set_txconfig((struct bitmain_txconfig_token *)sendbuf,
 						1, 1, 1, 1, 1, 0, 1, hwerror_eft,
-						beeper_ctrl, tempover_ctrl, home_mode,
+						beeper_ctrl, tempover_ctrl,
 						info->chain_num, info->asic_num,
 						BITMAIN_DEFAULT_FAN_MAX_PWM, info->timeout,
-						info->frequency, _voltage,
+						info->frequency, info->voltage,
 						0, 0, 0x04, info->reg_data);
-
+#endif
 		if (sendlen <= 0) {
 			applog(LOG_ERR, "%s%d: %s() set_txconfig error(%d)",
 					bitmain->drv->name, bitmain->device_id, __func__, sendlen);
@@ -2546,14 +2521,13 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 	struct work *work, *usework;
 	bool ret = true, dodelay = false;
 	int sendret = 0, sentcount = 0, neednum = 0, queuednum = 0, sendnum = 0, sendlen = 0;
-	int loop_count = 0, roll, roll_limit;
+	int roll, roll_limit;
 	uint8_t sendbuf[BITMAIN_SENDBUF_SIZE];
 	cgtimer_t ts_start;
 	int senderror = 0;
-	struct timeval now, stt;
+	struct timeval now;
 	int timediff = 0;
 	K_ITEM *witem;
-	bool did = false;
 
 #ifdef USE_ANT_S1
 	/*
@@ -2599,8 +2573,6 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 	}
 #endif
 
-	PROFILE_START(stt);
-
 	applog(LOG_DEBUG, "%s%d: %s() start",
 			  bitmain->drv->name, bitmain->device_id,
 			  __func__);
@@ -2621,35 +2593,28 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 	else
 		ret = false;
 
-#ifdef USE_ANT_S2
 	if (info->fifo_space > 0) {
 		work = get_queued(bitmain);
 		if (!work) {
-			// Ignore until work is first available
-			if (!info->got_work)
-				info->fill_start_nowork++;
-			else {
-				if (info->fifo_space < BITMAIN_MAX_WORK_NUM)
-					neednum = info->fifo_space;
-				else
-					neednum = BITMAIN_MAX_WORK_NUM;
+			if (info->fifo_space < BITMAIN_MAX_WORK_NUM)
+				neednum = info->fifo_space;
+			else
+				neednum = BITMAIN_MAX_WORK_NUM;
 
-				queuednum = info->queued;
+			queuednum = info->queued;
 
-				int need = neednum - queuednum;
-				if (need > BITMAIN_MAX_WORK_NUM) {
-					need = BITMAIN_MAX_WORK_NUM;
-					info->need_over++;
-				} else {
-					if (need < 0)
-						need = 0;
-				}
-				info->fill_nowork++;
-				info->need_nowork[need]++;
+			int need = neednum - queuednum;
+			if (need > BITMAIN_MAX_WORK_NUM) {
+				need = BITMAIN_MAX_WORK_NUM;
+				info->need_over++;
+			} else {
+				if (need < 0)
+					need = 0;
 			}
+			info->fill_nowork++;
+			info->need_nowork[need]++;
 			goto out_unlock;
 		}
-		info->got_work = true;
 
 		roll_limit = work->drv_rolllimit;
 		info->fill_rolltot += roll_limit;
@@ -2664,15 +2629,8 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 		info->fill_roll++;
 		roll = 0;
 	}
-#endif
 
-#ifdef USE_ANT_S1
-	while (info->fifo_space > 0) {
-#else
 	while (info->fifo_space > 0 && roll <= roll_limit) {
-#endif
-		loop_count++;
-		did = true;
 		info->fifo_checks++;
 		if (info->fifo_space < BITMAIN_MAX_WORK_NUM) {
 			neednum = info->fifo_space;
@@ -2688,77 +2646,6 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 				  bitmain->drv->name, bitmain->device_id,
 				  queuednum, info->fifo_space, neednum);
 		info->fill_want += (neednum - queuednum);
-
-#ifdef USE_ANT_S1
-		while (queuednum < neednum) {
-			work = get_queued(bitmain);
-			if (!work) {
-				// Ignore until work is first available
-				if (!info->got_work)
-					info->fill_start_nowork++;
-				else {
-					int need = neednum - queuednum;
-					if (need > BITMAIN_MAX_WORK_NUM) {
-						need = BITMAIN_MAX_WORK_NUM;
-						info->need_over++;
-					} else {
-						if (need < 0)
-							need = 0;
-					}
-					info->fill_nowork++;
-					info->need_nowork[need]++;
-				}
-				break;
-			} else {
-				info->got_work = true;
-				roll_limit = work->drv_rolllimit;
-				info->fill_rolltot += roll_limit;
-				if (info->fill_roll == 0)
-					info->fill_rollmin = info->fill_rollmax = roll_limit;
-				else {
-					if (info->fill_rollmin > roll_limit)
-						info->fill_rollmin = roll_limit;
-					if (info->fill_rollmax < roll_limit)
-						info->fill_rollmax = roll_limit;
-				}
-				info->fill_roll++;
-				roll = 0;
-				while (queuednum < neednum && roll <= roll_limit) {
-					applog(LOG_DEBUG, "%s%d: get work queued number:%d"
-							  " neednum:%d",
-							  bitmain->drv->name,
-							  bitmain->device_id,
-							  queuednum, neednum);
-
-					// Using devflag to say if it was rolled
-					if (roll == 0) {
-						usework = work;
-						usework->devflag = false;
-					} else {
-						usework = copy_work_noffset(work, roll);
-						usework->devflag = true;
-					}
-
-					witem = k_unlink_tail(info->work_list);
-					if (DATAW(witem)->work) {
-						// Was it rolled?
-						if (DATAW(witem)->work->devflag)
-							free_work(DATAW(witem)->work);
-						else
-							work_completed(bitmain, DATAW(witem)->work);
-					}
-					DATAW(witem)->work = usework;
-					DATAW(witem)->wid = ++info->last_wid;
-					info->queued++;
-					k_add_head(info->work_ready, witem);
-					queuednum++;
-					roll++;
-				}
-				if (queuednum < neednum)
-					info->fill_rolllimit++;
-			}
-		}
-#else
 		while (queuednum < neednum && roll <= roll_limit) {
 			applog(LOG_DEBUG, "%s%d: get work queued number:%d"
 					  " neednum:%d",
@@ -2790,10 +2677,6 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 			queuednum++;
 			roll++;
 		}
-		if (queuednum < neednum)
-			info->fill_rolllimit++;
-#endif
-
 		if (queuednum < BITMAIN_MAX_DEAL_QUEUE_NUM) {
 			if (queuednum < neednum) {
 				info->fill_toosmall++;
@@ -2850,27 +2733,15 @@ static bool bitmain_fill(struct cgpu_info *bitmain)
 			applog(LOG_DEBUG, "%s%d: Send work set_txtask error: %d",
 					  bitmain->drv->name, bitmain->device_id,
 					  sendlen);
-			goto out_unlock;
 		}
 	}
 
 out_unlock:
-	if (loop_count > BITMAIN_MAX_WORK_NUM)
-		loop_count = BITMAIN_MAX_WORK_NUM;
-	info->fill_loop_count[loop_count]++;
-
-	if (did) {
-		PROFILE_FINISH(stt, info->fill_usec_count, info->fill_usec,
-				info->fill_usec_ranges);
-	} else
-		PROFILE_ZERO(info->fill_usec_ranges);
-
 	cgtime(&now);
 	timediff = now.tv_sec - info->last_status_time.tv_sec;
 	if (timediff < 0)
 		timediff = -timediff;
 	if (timediff > BITMAIN_SEND_STATUS_TIME) {
-		PROFILE_START(stt);
 		info->fill_sendstatus++;
 		applog(LOG_DEBUG, "%s%d: Send RX Status Token fifo_space(%d) timediff(%d)",
 				  bitmain->drv->name, bitmain->device_id,
@@ -2901,10 +2772,7 @@ out_unlock:
 				}
 			}
 		}
-		PROFILE_FINISH(stt, info->fill_stat_usec_count, info->fill_stat_usec,
-				info->fill_stat_usec_ranges);
 	}
-
 	if (info->send_full_space > BITMAIN_SEND_FULL_SPACE) {
 		info->send_full_space = 0;
 		ret = true;
@@ -2912,14 +2780,11 @@ out_unlock:
 	mutex_unlock(&info->qlock);
 	if (senderror) {
 		ret = true;
-		info->fill_sleepsa++;
 		cgsleep_prepare_r(&ts_start);
 		cgsleep_ms_r(&ts_start, 50);
 	} else {
-		if (dodelay) {
-			info->fill_sleepsb++;
+		if (dodelay)
 			cgsleep_ms(opt_bitmain_workdelay);
-		}
 	}
 	return ret;
 }
@@ -2989,8 +2854,7 @@ static struct api_data *bitmain_api_stats(struct cgpu_info *cgpu)
 {
 	struct api_data *root = NULL;
 	struct bitmain_info *info = cgpu->device_data;
-	char workbuf[16 * (BITMAIN_MAX_WORK_NUM + 1)], *workptr;
-	char usecbuf[16 * (PROFILE_STATS + 2)], *usecptr;
+	char needbuf[16 * (BITMAIN_MAX_WORK_NUM + 1)], *needptr;
 	char fillbuf[64];
 	char rollbuf[64];
 	char regbuf[16];
@@ -3141,104 +3005,74 @@ static struct api_data *bitmain_api_stats(struct cgpu_info *cgpu)
 	root = api_add_uint32(root, "overheat_recovers", &(info->overheat_recovers), true);
 #endif
 	root = api_add_uint64(root, "fill_calls", &(info->fill_calls), true);
-	workptr = workbuf;
-	for (i = 0; i <= BITMAIN_MAX_WORK_NUM; i++) {
-		len = sizeof(workbuf) - (workptr - workbuf);
-		if (len > 1) {
-			snprintf(workptr, len, "%s%"PRId64,
-				 i ? "/" : "", info->fill_loop_count[i]);
-			workptr += strlen(workptr);
-		}
-	}
-	root = api_add_string(root, "fill_loop_count", workbuf, true);
-	avg = info->fill_usec_count ? (float)(info->fill_usec) /
-					(float)(info->fill_usec_count) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav %"PRId64,
-					   info->fill_usec, avg,
-					   info->fill_usec_count);
-	root = api_add_string(root, "fill_usec", fillbuf, true);
-	usecptr = usecbuf;
-	for (i = 0; i < PROFILE_STATS+2; i++) {
-		len = sizeof(usecbuf) - (usecptr - usecbuf);
-		if (len > 1) {
-			snprintf(usecptr, len, "%s%"PRId64,
-				 i ? "/" : "", info->fill_usec_ranges[i]);
-			usecptr += strlen(usecptr);
-		}
-	}
-	root = api_add_string(root, "fill_usec_ranges", usecbuf, true);
 	root = api_add_uint64(root, "fill_nospace", &(info->fill_nospace), true);
 	root = api_add_uint64(root, "fifo_checks", &(info->fifo_checks), true);
 	root = api_add_uint64(root, "fill_neededless", &(info->fill_neededless), true);
 	avg = info->fifo_checks ? (float)(info->fill_totalneeded) /
 					(float)(info->fifo_checks) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRIu64"/%.2fav", info->fill_totalneeded, avg);
+	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav", info->fill_totalneeded, avg);
 	root = api_add_string(root, "fill_needed", fillbuf, true);
-	workptr = workbuf;
+	needptr = needbuf;
 	for (i = 0; i <= BITMAIN_MAX_WORK_NUM; i++) {
-		len = sizeof(workbuf) - (workptr - workbuf);
+		len = sizeof(needbuf) - (needptr - needbuf);
 		if (len > 1) {
-			snprintf(workptr, len, "%s%"PRIu64,
+			snprintf(needptr, len, "%s%"PRIu64,
 				 i ? "/" : "", info->fill_need[i]);
-			workptr += strlen(workptr);
+			needptr += strlen(needptr);
 		}
 	}
-	root = api_add_string(root, "fill_need", workbuf, true);
+	root = api_add_string(root, "fill_need", needbuf, true);
 	avg = info->fifo_checks ? (float)(info->fill_want) /
 					(float)(info->fifo_checks) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRIu64"/%.2fav", info->fill_want, avg);
+	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav", info->fill_want, avg);
 	root = api_add_string(root, "fill_want", fillbuf, true);
-	root = api_add_uint64(root, "fill_start_nowork", &(info->fill_start_nowork), true);
 	root = api_add_uint64(root, "fill_nowork", &(info->fill_nowork), true);
-	root = api_add_uint64(root, "fill_rolllimit", &(info->fill_rolllimit), true);
 	root = api_add_uint64(root, "fill_toosmall", &(info->fill_toosmall), true);
 	avg = info->fill_toosmall ? (float)(info->fill_less) /
 					(float)(info->fill_toosmall) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRIu64" %.2fav", info->fill_less, avg);
+	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64" %.2fav", info->fill_less, avg);
 	root = api_add_string(root, "fill_less", fillbuf, true);
 	root = api_add_uint64(root, "fill_sends", &(info->fill_sends), true);
 	avg = info->fill_sends ? (float)(info->fill_totalsend) /
 					(float)(info->fill_sends) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRIu64"/%.2fav", info->fill_totalsend, avg);
+	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav", info->fill_totalsend, avg);
 	root = api_add_string(root, "fill_totalsend", fillbuf, true);
-	workptr = workbuf;
+	needptr = needbuf;
 	for (i = 0; i <= BITMAIN_MAX_WORK_NUM; i++) {
-		len = sizeof(workbuf) - (workptr - workbuf);
+		len = sizeof(needbuf) - (needptr - needbuf);
 		if (len > 1) {
-			snprintf(workptr, len, "%s%"PRIu64,
+			snprintf(needptr, len, "%s%"PRIu64,
 				 i ? "/" : "", info->fill_send[i]);
-			workptr += strlen(workptr);
+			needptr += strlen(needptr);
 		}
 	}
-	root = api_add_string(root, "fill_send", workbuf, true);
-	workptr = workbuf;
+	root = api_add_string(root, "fill_send", needbuf, true);
+	needptr = needbuf;
 	for (i = 0; i <= BITMAIN_MAX_WORK_NUM; i++) {
-		len = sizeof(workbuf) - (workptr - workbuf);
+		len = sizeof(needbuf) - (needptr - needbuf);
 		if (len > 1) {
-			snprintf(workptr, len, "%s%"PRIu64,
+			snprintf(needptr, len, "%s%"PRIu64,
 				 i ? "/" : "", info->fill_sendless[i]);
-			workptr += strlen(workptr);
+			needptr += strlen(needptr);
 		}
 	}
-	root = api_add_string(root, "fill_sendless", workbuf, true);
+	root = api_add_string(root, "fill_sendless", needbuf, true);
 	root = api_add_uint64(root, "fill_seterr", &(info->fill_seterr), true);
 	root = api_add_uint64(root, "fill_senderr", &(info->fill_senderr), true);
-	root = api_add_uint64(root, "fill_sleepsa", &(info->fill_sleepsa), true);
-	root = api_add_uint64(root, "fill_sleepsb", &(info->fill_sleepsb), true);
 
-	workptr = workbuf;
+	needptr = needbuf;
 	for (i = 0; i <= BITMAIN_MAX_WORK_NUM; i++) {
-		len = sizeof(workbuf) - (workptr - workbuf);
+		len = sizeof(needbuf) - (needptr - needbuf);
 		if (len > 1) {
-			snprintf(workptr, len, "%s%"PRIu64,
+			snprintf(needptr, len, "%s%"PRIu64,
 				 i ? "/" : "", info->need_nowork[i]);
-			workptr += strlen(workptr);
+			needptr += strlen(needptr);
 		}
 	}
-	len = sizeof(workbuf) - (workptr - workbuf);
+	len = sizeof(needbuf) - (needptr - needbuf);
 	if (len > 1)
-		snprintf(workptr, len, " %"PRIu64, info->need_over);
-	root = api_add_string(root, "need_nowork", workbuf, true);
+		snprintf(needptr, len, " %"PRIu64, info->need_over);
+	root = api_add_string(root, "need_nowork", needbuf, true);
 	avg = info->fill_roll ? (float)(info->fill_rolltot) / (float)(info->fill_roll) : 0;
 	snprintf(rollbuf, sizeof(rollbuf), "%"PRIu64"/%d/%d/%.2fav",
 		 info->fill_roll, info->fill_rollmin, info->fill_rollmax, avg);
@@ -3247,65 +3081,14 @@ static struct api_data *bitmain_api_stats(struct cgpu_info *cgpu)
 	root = api_add_int(root, "send_status_time", &i, true);
 	root = api_add_timeval(root, "last_status_time", &(info->last_status_time), true);
 	root = api_add_uint64(root, "fill_sendstatus", &(info->fill_sendstatus), true);
-	avg = info->fill_stat_usec_count ? (float)(info->fill_stat_usec) /
-					(float)(info->fill_stat_usec_count) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav %"PRId64,
-					   info->fill_stat_usec, avg,
-					   info->fill_stat_usec_count);
-	root = api_add_string(root, "fill_stat_usec", fillbuf, true);
-	usecptr = usecbuf;
-	for (i = 0; i < PROFILE_STATS+2; i++) {
-		len = sizeof(usecbuf) - (usecptr - usecbuf);
-		if (len > 1) {
-			snprintf(usecptr, len, "%s%"PRId64,
-				 i ? "/" : "", info->fill_stat_usec_ranges[i]);
-			usecptr += strlen(usecptr);
-		}
-	}
-	root = api_add_string(root, "fill_stat_usec_ranges", usecbuf, true);
 	root = api_add_uint64(root, "read_good", &(info->read_good), true);
 	avg = info->read_good ? (float)(info->read_size) / (float)(info->read_good) : 0;
 	snprintf(fillbuf, sizeof(fillbuf), "%"PRIu64"/%d/%d/%.2fav",
 		 info->read_size, info->read_sizemin, info->read_sizemax, avg);
 	root = api_add_string(root, "read_size", fillbuf, true);
-	root = api_add_uint64(root, "read_0s", &(info->read_0s), true);
 	root = api_add_uint64(root, "read_18s", &(info->read_18s), true);
-	root = api_add_uint64(root, "read_bad", &(info->read_bad), true);
+	root = api_add_uint64(root, "read_bad", &(info->readbuf_over), true);
 	root = api_add_uint64(root, "readbuf_over", &(info->readbuf_over), true);
-	root = api_add_uint64(root, "get_results", &(info->get_results), true);
-	root = api_add_uint64(root, "get_sleepsa", &(info->get_sleepsa), true);
-	root = api_add_uint64(root, "get_sleepsb", &(info->get_sleepsb), true);
-	root = api_add_uint64(root, "get_sleepsc", &(info->get_sleepsc), true);
-	avg = info->get_usec_count ? (float)(info->get_usec) /
-					(float)(info->get_usec_count) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav %"PRId64, info->get_usec,
-					   avg, info->get_usec_count);
-	root = api_add_string(root, "get_usec", fillbuf, true);
-	usecptr = usecbuf;
-	for (i = 0; i < PROFILE_STATS+2; i++) {
-		len = sizeof(usecbuf) - (usecptr - usecbuf);
-		if (len > 1) {
-			snprintf(usecptr, len, "%s%"PRId64,
-				 i ? "/" : "", info->get_usec_ranges[i]);
-			usecptr += strlen(usecptr);
-		}
-	}
-	root = api_add_string(root, "get_usec_ranges", usecbuf, true);
-	avg = info->get_usec_count ? (float)(info->get_usec2) /
-					(float)(info->get_usec_count) : 0;
-	snprintf(fillbuf, sizeof(fillbuf), "%"PRId64"/%.2fav %"PRId64, info->get_usec2,
-					   avg, info->get_usec_count);
-	root = api_add_string(root, "get_usec2", fillbuf, true);
-	usecptr = usecbuf;
-	for (i = 0; i < PROFILE_STATS+2; i++) {
-		len = sizeof(usecbuf) - (usecptr - usecbuf);
-		if (len > 1) {
-			snprintf(usecptr, len, "%s%"PRId64,
-				 i ? "/" : "", info->get_usec2_ranges[i]);
-			usecptr += strlen(usecptr);
-		}
-	}
-	root = api_add_string(root, "get_usec2_ranges", usecbuf, true);
 
 #ifdef USE_ANT_S2
 	root = api_add_bool(root, "opt_bitmain_beeper", &opt_bitmain_beeper, false);
@@ -3317,7 +3100,6 @@ static struct api_data *bitmain_api_stats(struct cgpu_info *cgpu)
 	root = api_add_int(root, "opt_bitmain_fan_min", &opt_bitmain_fan_min, false);
 	root = api_add_int(root, "opt_bitmain_fan_max", &opt_bitmain_fan_max, false);
 	root = api_add_bool(root, "opt_bitmain_auto", &opt_bitmain_auto, false);
-	root = api_add_bool(root, "opt_bitmain_homemode", &opt_bitmain_homemode, false);
 
 	return root;
 }
