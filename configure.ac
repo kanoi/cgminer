@@ -86,6 +86,9 @@ esac
 #CFLAGS="$CFLAGS -Wimplicit-fallthrough=0"
 #^ causes problem on gcc 4.9 - pass in from CFLAG if needed
 
+#add CFLAGS "-fcommon" otherwise cause issue compilation on gcc 10.x (raspberry BullEyes)
+CFLAGS+=" -fcommon"
+
 case $target in
   *-*-linux-gnu*)
     have_linux=true
