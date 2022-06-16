@@ -1964,7 +1964,7 @@ static struct opt_table opt_config_table[] = {
 		     "Set GekkoScience miner minimum hash quality, range 0-100"),
 	OPT_WITH_ARG("--gekko-tune-up",
 		     set_float_0_to_500, opt_show_floatval, &opt_gekko_tune_up,
-		     "Set GekkoScience miner ramping hash threshold, rante 0-99"),
+		     "Set GekkoScience miner ramping hash threshold, range 0-99"),
 	OPT_WITH_ARG("--gekko-wait-factor",
 		     set_float_0_to_500, opt_show_floatval, &opt_gekko_wait_factor,
 		     "Set GekkoScience miner task send wait factor, range 0.01-1.00"),
@@ -3175,13 +3175,13 @@ static unsigned char scriptsig_header_bin[41];
 
 static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 {
-	json_t *transaction_arr, *rules_arr, *coinbase_aux;
+	json_t *transaction_arr, *rules_arr, *coinbaseaux, *coinbaseaux_value;
 	const char *previousblockhash;
 	unsigned char hash_swap[32];
 	struct timeval now;
 	const char *target;
 	uint64_t coinbasevalue;
-	const char *flags;
+	const char *coinbaseaux_key;
 	const char *bits;
 	char header[260];
 	int ofs = 0, len;
@@ -3205,11 +3205,10 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	bits = json_string_value(json_object_get(res_val, "bits"));
 	height = json_integer_value(json_object_get(res_val, "height"));
 	coinbasevalue = json_integer_value(json_object_get(res_val, "coinbasevalue"));
-	coinbase_aux = json_object_get(res_val, "coinbaseaux");
-	flags = json_string_value(json_object_get(coinbase_aux, "flags"));
+	coinbaseaux = json_object_get(res_val, "coinbaseaux");
 	default_witness_commitment = json_string_value(json_object_get(res_val, "default_witness_commitment"));
 
-	if (!previousblockhash || !target || !version || !curtime || !bits || !coinbase_aux || !flags) {
+	if (!previousblockhash || !target || !version || !curtime || !bits || !coinbaseaux) {
 		applog(LOG_ERR, "Pool %d JSON failed to decode GBT", pool->pool_no);
 		return false;
 	}
@@ -3239,7 +3238,6 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	applog(LOG_DEBUG, "curtime: %d", curtime);
 	applog(LOG_DEBUG, "bits: %s", bits);
 	applog(LOG_DEBUG, "height: %d", height);
-	applog(LOG_DEBUG, "flags: %s", flags);
 
 	cg_wlock(&pool->gbt_lock);
 	hex2bin(hash_swap, previousblockhash, 32);
@@ -3287,11 +3285,20 @@ static bool gbt_solo_decode(struct pool *pool, json_t *res_val)
 	/* Put block height at start of template. */
 	ofs += ser_number(pool->scriptsig_base + ofs, height); // max 5
 
-	/* Followed by flags */
-	len = strlen(flags) / 2;
-	pool->scriptsig_base[ofs++] = len;
-	hex2bin(pool->scriptsig_base + ofs, flags, len);
-	ofs += len;
+	/* Followed by coinbaseaux */
+	pool->scriptsig_base[ofs++] = 0;
+	json_object_foreach(coinbaseaux, coinbaseaux_key, coinbaseaux_value) {
+		applog(LOG_DEBUG, "coinbaseaux.%s: %s", coinbaseaux_key, json_string_value(coinbaseaux_value));
+
+		len = json_string_length(coinbaseaux_value) / 2;
+		if (pool->scriptsig_base[ofs-1] + len > 32) {
+			applog(LOG_ERR, "Pool %d JSON failed to decode GBT coinbaseaux", pool->pool_no);
+			return false;
+		}
+		hex2bin(pool->scriptsig_base + ofs + pool->scriptsig_base[ofs-1], json_string_value(coinbaseaux_value), len);
+		pool->scriptsig_base[ofs-1] += len;
+	}
+	ofs += pool->scriptsig_base[ofs-1];
 
 	/* Followed by timestamp */
 	cgtime(&now);
