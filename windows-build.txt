@@ -1,6 +1,6 @@
 Building cgminer on Windows 10
 ------------------------------
-
+edit
 One way to build cgminer on Windows 10 is to use
  WSL - Windows Subsystem for Linux
 
