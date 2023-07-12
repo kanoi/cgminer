@@ -274,6 +274,7 @@ static inline int fsync (int fd)
 	DRIVER_ADD_COMMAND(blockerupter) \
 	DRIVER_ADD_COMMAND(cointerra) \
 	DRIVER_ADD_COMMAND(gekko) \
+	DRIVER_ADD_COMMAND(bm1397) \
 	DRIVER_ADD_COMMAND(dragonmintT1) \
 	DRIVER_ADD_COMMAND(hashfast) \
 	DRIVER_ADD_COMMAND(drillbit) \
@@ -1055,7 +1056,7 @@ extern bool opt_worktime;
 extern char *opt_avalon_options;
 extern char *opt_bitburner_fury_options;
 #endif
-#ifdef USE_GEKKO
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 extern char *opt_gekko_serial;
 extern bool opt_gekko_noboost;
 extern bool opt_gekko_lowboost;

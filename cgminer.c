@@ -139,6 +139,10 @@ char *curly = ":D";
 #include "driver-gekko.h"
 #endif
 
+#ifdef USE_BM1397
+#include "driver-bm1397.h"
+#endif
+
 #ifdef USE_HASHFAST
 #include "driver-hashfast.h"
 #endif
@@ -303,7 +307,7 @@ static char *opt_set_avalonm_freq;
 #ifdef USE_BLOCKERUPTER
 int opt_bet_clk = 0;
 #endif
-#ifdef USE_GEKKO
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 char *opt_gekko_serial = NULL;
 bool opt_gekko_noboost = 0;
 bool opt_gekko_lowboost = 0;
@@ -1931,7 +1935,7 @@ static struct opt_table opt_config_table[] = {
                      opt_set_intval, opt_show_intval, &opt_bet_clk,
                      "Set Block Erupter clock"),
 #endif
-#ifdef USE_GEKKO
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 	OPT_WITH_ARG("--gekko-serial",
 			 opt_set_charp, NULL, &opt_gekko_serial,
 			 "Detect GekkoScience Device by Serial Number"),
@@ -2642,6 +2646,9 @@ static char *opt_verusage_and_exit(const char *extra)
 #endif
 #ifdef USE_GEKKO
 		"gekko "
+#endif
+#ifdef USE_BM1397
+		"BM1397 "
 #endif
 #ifdef USE_HASHFAST
 		"hashfast "
@@ -11087,7 +11094,7 @@ begin_bench:
 	if (total_control_threads != 8)
 		early_quit(1, "incorrect total_control_threads (%d) should be 8", total_control_threads);
 
-#ifdef USE_GEKKO
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 	set_lowprio();
 #else
 	set_highprio();

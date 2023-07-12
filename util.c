@@ -3224,7 +3224,7 @@ resend:
 	}
 
 	/* Attempt to configure stratum protocol feature set first. */
-#ifdef USE_GEKKO
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 	configure_stratum_mining(pool);
 	if (!pool->sock) {
 		//repair damage done by configure_stratum_mining

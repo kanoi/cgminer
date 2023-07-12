@@ -146,6 +146,7 @@ CGMiner specific configuration options:
   --enable-drillbit       Compile support for Drillbit BitFury ASICs (default
                           disabled)
   --enable-gekko          Compile support for GekkoScience (default disabled)
+  --enable-bm1397         Compile support for bm1397 (default disabled)
   --enable-hashfast       Compile support for Hashfast (default disabled)
   --enable-icarus         Compile support for Icarus (default disabled)
   --enable-klondike       Compile support for Klondike (default disabled)
