@@ -30,7 +30,36 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-        }
+        },
+        {
+            "label": "Build debug armv7",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/build_target_debug.sh",
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "label": "send debug armv7",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/send_to_target.sh",
+            "args": ["debug"],
+            "group": "none",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
+            "label": "send release armv7",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/send_to_target.sh",
+            "args": ["release"],
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
     ]
 }
   
