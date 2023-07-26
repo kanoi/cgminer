@@ -28,8 +28,8 @@ function cross_compile_build {
     sudo chroot $CHROOT_PATH /bin/bash -c "export CXX=$TARGET_ARCH-g++"
 
     # remove build_arm forlder if exists
-    if [ -d "$SOURCE_CODE_DIR/build_arm" ]; then
-        rm -rf "$SOURCE_CODE_DIR/build_arm"
+    if [ -d "$SOURCE_CODE_DIR/build_arm_debug" ]; then
+        rm -rf "$SOURCE_CODE_DIR/build_arm_debug"
     fi
 
     # Copy project code to chroot
@@ -37,13 +37,13 @@ function cross_compile_build {
 
     
     # Build the project inside chroot
-    sudo chroot $CHROOT_PATH /bin/bash -c "cd /tmp/$PROJECT/ && ./scripts/build_armhf.sh"
+    sudo chroot $CHROOT_PATH /bin/bash -c "cd /tmp/$PROJECT/ && ./scripts/build_armhf_debug.sh"
 
     # Copy the built project to the host machine
 
-    sudo cp -r $CHROOT_PATH/tmp/$PROJECT/build_arm $SOURCE_CODE_DIR/build_arm
+    sudo cp -r $CHROOT_PATH/tmp/$PROJECT/build_arm_debug $SOURCE_CODE_DIR/build_arm_debug
 
-    sudo chown -R $USER:$USER $SOURCE_CODE_DIR/build_arm
+    sudo chown -R $USER:$USER $SOURCE_CODE_DIR/build_arm_debug
 
     # Clean up
     sudo chroot $CHROOT_PATH /bin/bash -c "cd /tmp/ && rm -rf *"
