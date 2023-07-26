@@ -1,0 +1,11 @@
+# Path to the chroot environment
+CHROOT_PATH=/home/pixma/buster-crossdev
+
+# Target architecture triplet
+TARGET_ARCH=arm-linux-gnueabihf
+
+# Project to build
+PROJECT=cgminer-hestiia-edition
+
+# Path to the source code on the host machine
+SOURCE_CODE_DIR=/home/pixma/${PROJECT}

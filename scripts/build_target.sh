@@ -1,12 +1,8 @@
 #!/bin/bash
 # Path to the chroot environment
-CHROOT_PATH=/home/pixma/buster-crossdev
+source ./env
 
-# Target architecture triplet
-TARGET_ARCH=arm-linux-gnueabihf
-PROJECT=cgminer-hestiia-edition
-# Path to the source code on the host machine
-SOURCE_CODE_DIR=/home/pixma/${PROJECT}
+echo $CHROOT_PATH
 
 # Function to set up chroot environment and build the project
 function cross_compile_build {
@@ -19,6 +15,7 @@ function cross_compile_build {
     sudo chroot $CHROOT_PATH /bin/bash -c "apt-get install build-essential autoconf automake libtool \
                                             pkg-config libcurl4-openssl-dev libudev-dev \
                                             libusb-1.0-0-dev libncurses5-dev zlib1g-dev git -y"
+                                            
     sudo chroot $CHROOT_PATH /bin/bash -c "cd /tmp"
     sudo chroot $CHROOT_PATH /bin/bash -c "export CC=$TARGET_ARCH-gcc"
     sudo chroot $CHROOT_PATH /bin/bash -c "export CXX=$TARGET_ARCH-g++"
