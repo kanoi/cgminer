@@ -9,7 +9,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "driver-gekko.h"
+#include "driver-bm1397.h"
 #include "crc.h"
 #include "compat.h"
 #include <unistd.h>
@@ -105,7 +105,7 @@ static void gekko_usleep(struct COMPAC_INFO *info, int usec)
 #endif
 }
 
-static float fbound(float value, float lower_bound, float upper_bound)
+static float freqbounding(float value, float lower_bound, float upper_bound)
 {
 	if (value < lower_bound)
 		return lower_bound;
@@ -280,11 +280,11 @@ static float limit_freq(struct COMPAC_INFO *info, float freq, bool zero)
 	 case IDENT_GSD:
 	 case IDENT_BSE:
 	 case IDENT_GSE:
-		freq = fbound(freq, info->freq_base, 500);
+		freq = freqbounding(freq, info->freq_base, 500);
 		break;
 	 case IDENT_GSH:
 	 case IDENT_GSI:
-		freq = fbound(freq, 50, 900);
+		freq = freqbounding(freq, 50, 900);
 		break;
 	 case IDENT_GSF:
 	 case IDENT_GSFM:
@@ -292,11 +292,11 @@ static float limit_freq(struct COMPAC_INFO *info, float freq, bool zero)
 		if (zero && freq == 0)
 			freq = 0;
 		else
-			freq = fbound(freq, 100, 800);
+			freq = freqbounding(freq, 100, 800);
 		break;
 	 default:
 		// 'should' never happen ...
-		freq = fbound(freq, 100, 300);
+		freq = freqbounding(freq, 100, 300);
 		break;
 	}
 	return freq;
@@ -3371,6 +3371,7 @@ static void *compac_listen(void *object)
 	return NULL;
 }
 
+
 static bool compac_init(struct thr_info *thr)
 {
 	int i;
@@ -3388,7 +3389,7 @@ static bool compac_init(struct thr_info *thr)
 		opt_gekko_tune_down = 100;
 	if (opt_gekko_tune_up > 99)
 		opt_gekko_tune_up = 99;
-	opt_gekko_wait_factor = fbound(opt_gekko_wait_factor, 0.01, 2.0);
+	opt_gekko_wait_factor = freqbounding(opt_gekko_wait_factor, 0.01, 2.0);
 	info->wait_factor0 = opt_gekko_wait_factor;
 	if (opt_gekko_start_freq < 25)
 		opt_gekko_start_freq = 25;
@@ -4607,7 +4608,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 			return replybuf;
 		}
 
-		info->wait_factor0 = fbound(atof(setting), 0.01, 2.0);
+		info->wait_factor0 = freqbounding(atof(setting), 0.01, 2.0);
 		compac_update_rates(compac);
 
 		return NULL;
@@ -4642,7 +4643,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 			return replybuf;
 		}
 
-		info->ghrequire = fbound(atof(setting), 0.0, 0.8);
+		info->ghrequire = freqbounding(atof(setting), 0.0, 0.8);
 		compac_update_rates(compac);
 
 		return NULL;
