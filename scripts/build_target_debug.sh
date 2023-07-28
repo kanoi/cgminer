@@ -1,6 +1,6 @@
 #!/bin/bash
 # Path to the chroot environment
-CHROOT_PATH=/home/pixma/buster-crossdev
+CHROOT_PATH=/home/$USER/buster-crossdev
 
 # Target architecture triplet
 TARGET_ARCH=arm-linux-gnueabihf
@@ -9,7 +9,7 @@ TARGET_ARCH=arm-linux-gnueabihf
 PROJECT=cgminer-hestiia-edition
 
 # Path to the source code on the host machine
-SOURCE_CODE_DIR=/home/pixma/${PROJECT}
+SOURCE_CODE_DIR=/home/$USER/${PROJECT}
 
 # Function to set up chroot environment and build the project
 function cross_compile_build {
