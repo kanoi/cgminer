@@ -1,3 +1,6 @@
 {
-
+    "makefile.makefilePath": "${workspaceFolder}/Makefile",
+    "files.associations": {
+        "miner.h": "c"
+    }
 }
