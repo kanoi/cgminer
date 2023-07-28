@@ -77,82 +77,12 @@ char *curly = ":D";
 	#include <sys/wait.h>
 #endif
 
-#ifdef USE_AVALON
-#include "driver-avalon.h"
-#endif
-
-#ifdef USE_AVALON2
-#include "driver-avalon2.h"
-#endif
-
-#ifdef USE_AVALON4
-#include "driver-avalon4.h"
-#endif
-
-#ifdef USE_AVALON7
-#include "driver-avalon7.h"
-#endif
-
-#ifdef USE_AVALON8
-#include "driver-avalon8.h"
-#endif
-
-#ifdef USE_AVALON_MINER
-#include "driver-avalon-miner.h"
-#endif
-
-#ifdef USE_BFLSC
-#include "driver-bflsc.h"
-#endif
-
-#ifdef USE_SP10
-#include "driver-spondoolies-sp10.h"
-#endif
-
-#ifdef USE_SP30
-#include "driver-spondoolies-sp30.h"
-#endif
-
-#ifdef USE_BLOCK_ERUPTER
-#include "driver-blockerupter.h"
-#endif
-
-#ifdef USE_BITFURY
-#include "driver-bitfury.h"
-#endif
-
-#ifdef USE_BITFURY16
-#include "driver-bitfury16.h"
-#endif
-
-#ifdef USE_BITMAIN_SOC
-#include <sys/sysinfo.h>
-#include "driver-btm-soc.h"
-#endif
-
-
-#ifdef USE_COINTERRA
-#include "driver-cointerra.h"
-#endif
-
 #ifdef USE_GEKKO
 #include "driver-gekko.h"
 #endif
 
 #ifdef USE_BM1397
 #include "driver-bm1397.h"
-#endif
-
-#ifdef USE_HASHFAST
-#include "driver-hashfast.h"
-#endif
-
-#if defined(USE_ANT_S1) || defined(USE_ANT_S2) || defined(USE_ANT_S3)
-#include "driver-bitmain.h"
-#endif
-
-#if defined(USE_BITFORCE) || defined(USE_ICARUS) || defined(USE_AVALON) || defined(USE_AVALON2) || defined(USE_MODMINER)
-#	define USE_FPGA
 #endif
 
 struct strategies strategies[] = {

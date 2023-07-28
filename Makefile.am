@@ -53,16 +53,8 @@ cgminer_SOURCES	+= klist.h klist.c
 
 cgminer_SOURCES	+= noncedup.c
 
-if NEED_FPGAUTILS
-cgminer_SOURCES += fpgautils.c fpgautils.h
-endif
-
 if WANT_USBUTILS
 cgminer_SOURCES += usbutils.c usbutils.h
-endif
-
-if WANT_LIBBITFURY
-cgminer_SOURCES += libbitfury.c libbitfury.h mcp2210.c mcp2210.h
 endif
 
 if WANT_CRC16
@@ -70,152 +62,11 @@ cgminer_SOURCES += crc16.c crc.h
 endif
 
 # Device drivers
-if HAS_AVALON
-cgminer_SOURCES += driver-avalon.c driver-avalon.h
-endif
-
-if HAS_KNC
-cgminer_SOURCES += driver-knc.c knc-asic.c knc-asic.h knc-transport.h knc-transport-spi.c
-cgminer_LDADD   += -lz
-endif
-
-if HAS_BFLSC
-cgminer_SOURCES += driver-bflsc.c driver-bflsc.h
-endif
-
-if HAS_BITFORCE
-cgminer_SOURCES += driver-bitforce.c
-endif
-
-if HAS_HASHFAST
-cgminer_SOURCES += driver-hashfast.c driver-hashfast.h hf_protocol.h hf_protocol_be.h
-endif
-
-if HAS_HASHRATIO
-cgminer_SOURCES += driver-hashratio.c driver-hashratio.h
-endif
-
-if HAS_BITFURY
-cgminer_SOURCES += driver-bitfury.c driver-bitfury.h
-endif
-
-if HAS_BITFURY16
-cgminer_SOURCES += bf16-bitfury16.c bf16-bitfury16.h
-cgminer_SOURCES += bf16-brd-control.c bf16-brd-control.h
-cgminer_SOURCES += bf16-communication.c bf16-communication.h
-cgminer_SOURCES += bf16-ctrldevice.c bf16-ctrldevice.h
-cgminer_SOURCES += bf16-device.h
-cgminer_SOURCES += bf16-gpiodevice.c bf16-gpiodevice.h
-cgminer_SOURCES += bf16-mspcontrol.c bf16-mspcontrol.h
-cgminer_SOURCES += bf16-spidevice.c bf16-spidevice.h
-cgminer_SOURCES += bf16-uartdevice.c bf16-uartdevice.h
-cgminer_SOURCES += driver-bitfury16.c driver-bitfury16.h
-endif
-
-if HAS_BITMAIN_SOC
-cgminer_SOURCES += driver-btm-soc.c driver-btm-soc.h
-cgminer_SOURCES += bitmain-board-test.c bitmain-board-test.h
-endif
-
-if HAS_BITMINE_A1
-cgminer_SOURCES += driver-SPI-bitmine-A1.c
-cgminer_SOURCES += spi-context.c spi-context.h
-cgminer_SOURCES += A1-common.h
-cgminer_SOURCES += A1-board-selector.h
-cgminer_SOURCES += A1-board-selector-CCD.c A1-board-selector-CCR.c
-cgminer_SOURCES += A1-trimpot-mcp4x.h A1-trimpot-mcp4x.c
-cgminer_SOURCES += i2c-context.c i2c-context.h
-endif
-
-if HAS_DRAGONMINT_T1
-cgminer_SOURCES += driver-SPI-dragonmint-t1.c
-cgminer_SOURCES += dragonmint_t1.c
-cgminer_SOURCES += dm_temp_ctrl.c
-cgminer_SOURCES += dm_fan_ctrl.c
-cgminer_SOURCES += dm_compat.c
-endif
-
-if HAS_DRILLBIT
-cgminer_SOURCES += driver-drillbit.c driver-drillbit.h
-endif
-
-if HAS_ICARUS
-cgminer_SOURCES += driver-icarus.c
-endif
-
-if HAS_KLONDIKE
-cgminer_SOURCES += driver-klondike.c
-endif
-
-if HAS_COINTERRA
-cgminer_SOURCES += driver-cointerra.c driver-cointerra.h
-endif
-
-if HAS_SP10
-cgminer_SOURCES += driver-spondoolies-sp10.c driver-spondoolies-sp10.h \
-		   driver-spondoolies-sp10-p.c driver-spondoolies-sp10-p.h
-endif
-
-
-if HAS_SP30
-cgminer_SOURCES += driver-spondoolies-sp30.c driver-spondoolies-sp30.h \
-		   driver-spondoolies-sp30-p.c driver-spondoolies-sp30-p.h
-endif
-
-if HAS_BAB
-cgminer_SOURCES += driver-bab.c
-endif
-
-if HAS_AVALON2
-cgminer_SOURCES += driver-avalon2.c driver-avalon2.h
-endif
-
-if HAS_AVALON4
-cgminer_SOURCES += driver-avalon4.c driver-avalon4.h
-endif
-
-if HAS_AVALON7
-cgminer_SOURCES += driver-avalon7.c driver-avalon7.h
-endif
-
-if HAS_AVALON8
-cgminer_SOURCES += driver-avalon8.c driver-avalon8.h
-endif
-
-if NEED_I2C_CONTEXT
-cgminer_SOURCES += i2c-context.c
-endif
-
-if HAS_AVALON_MINER
-cgminer_SOURCES += driver-avalon-miner.c driver-avalon-miner.h
-endif
-
-if HAS_MINION
-cgminer_SOURCES += driver-minion.c
-endif
-
-if HAS_ANT_S1
-cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
-endif
-
-if HAS_ANT_S2
-cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
-endif
-
-if HAS_ANT_S3
-cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
-endif
-
-if HAS_MODMINER
-cgminer_SOURCES += driver-modminer.c
-bitstreamsdir = $(bindir)/bitstreams
-dist_bitstreams_DATA = $(top_srcdir)/bitstreams/README
-endif
-
-if HAS_BLOCKERUPTER
-cgminer_SOURCES += driver-blockerupter.c driver-blockerupter.h
-endif
 
 if HAS_GEKKO
 cgminer_SOURCES += driver-gekko.c driver-gekko.h
+endif
+
+if HAS_BM1397
+cgminer_SOURCES += driver-bm1397.c driver-bm1397.h
 endif

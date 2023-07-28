@@ -123,40 +123,9 @@ If building on Ubuntu:
                              libusb-1.0-0-dev libncurses5-dev zlib1g-dev git
 
 CGMiner specific configuration options:
-  --enable-ants1          Compile support for Antminer S1 Bitmain (default
-                          disabled)
-  --enable-ants2          Compile support for Antminer S2 Bitmain (default
-                          disabled)
-  --enable-avalon         Compile support for Avalon (default disabled)
-  --enable-avalon2        Compile support for Avalon2/3 (default disabled)
-  --enable-avalon4        Compile support for Avalon4/4.1/6 (default disabled)
-  --enable-avalon7        Compile support for Avalon7 (default disabled)
-  --enable-avalon8        Compile support for Avalon8 (default disabled)
-  --enable-bab            Compile support for BlackArrow Bitfury (default
-                          disabled)
-  --enable-bflsc          Compile support for BFL ASICs (default disabled)
-  --enable-bitforce       Compile support for BitForce FPGAs (default
-                          disabled)
-  --enable-bitfury        Compile support for BitFury ASICs (default disabled)
-  --enable-bitmine_A1     Compile support for Bitmine.ch A1 ASICs (default
-                          disabled)
-  --enable-blockerupter   Compile support for ASICMINER BlockErupter Tube/Prisma
-                          (default disabled)
-  --enable-cointerra      Compile support for Cointerra ASICs (default disabled)
-  --enable-drillbit       Compile support for Drillbit BitFury ASICs (default
-                          disabled)
   --enable-gekko          Compile support for GekkoScience (default disabled)
   --enable-bm1397         Compile support for bm1397 (default disabled)
-  --enable-hashfast       Compile support for Hashfast (default disabled)
-  --enable-icarus         Compile support for Icarus (default disabled)
-  --enable-klondike       Compile support for Klondike (default disabled)
-  --enable-knc            Compile support for KnC miners (default disabled)
-  --enable-minion         Compile support for Minion BlackArrow ASIC (default
-                          disabled)
-  --enable-modminer       Compile support for ModMiner FPGAs(default disabled)
-  --enable-sp10           Compile support for Spondoolies SP10 (default
-                          disabled)
-  --enable-sp30           Compile support for Spondoolies SP30 (default
+
                           disabled)
   --disable-libcurl       Disable building with libcurl for GBT support
   --enable-libsystemd     Compile support for system watchdog and status
