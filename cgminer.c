@@ -191,52 +191,7 @@ bool opt_api_network;
 bool opt_delaynet;
 bool opt_disable_pool;
 static bool no_work;
-#ifdef USE_ICARUS
-char *opt_icarus_options = NULL;
-char *opt_icarus_timing = NULL;
-float opt_anu_freq = 250;
-float opt_au3_freq = 225;
-int opt_au3_volt = 775;
-float opt_rock_freq = 270;
-#endif
 bool opt_worktime;
-#ifdef USE_AVALON
-char *opt_avalon_options;
-char *opt_bitburner_fury_options;
-static char *opt_set_avalon_fan;
-static char *opt_set_avalon_freq;
-#endif
-#ifdef USE_AVALON2
-static char *opt_set_avalon2_freq;
-static char *opt_set_avalon2_fan;
-static char *opt_set_avalon2_voltage;
-#endif
-#ifdef USE_AVALON4
-static char *opt_set_avalon4_fan;
-static char *opt_set_avalon4_voltage;
-static char *opt_set_avalon4_freq;
-#endif
-#ifdef USE_AVALON7
-static char *opt_set_avalon7_fan;
-static char *opt_set_avalon7_voltage;
-static char *opt_set_avalon7_voltage_level;
-static char *opt_set_avalon7_voltage_offset;
-static char *opt_set_avalon7_freq;
-#endif
-#ifdef USE_AVALON8
-static char *opt_set_avalon8_fan;
-static char *opt_set_avalon8_voltage_level;
-static char *opt_set_avalon8_voltage_level_offset;
-static char *opt_set_avalon8_freq;
-static char *opt_set_avalon8_asic_otp;
-#endif
-#ifdef USE_AVALON_MINER
-static char *opt_set_avalonm_voltage;
-static char *opt_set_avalonm_freq;
-#endif
-#ifdef USE_BLOCKERUPTER
-int opt_bet_clk = 0;
-#endif
 #if defined(USE_GEKKO) || defined(USE_BM1397)
 char *opt_gekko_serial = NULL;
 bool opt_gekko_noboost = 0;
@@ -272,75 +227,8 @@ int opt_gekko_step_delay = 15;
 bool opt_gekko_mine2 = false; // gekko code ignores it
 int opt_gekko_tune2 = 0;
 #endif
-#ifdef USE_HASHRATIO
-#include "driver-hashratio.h"
-#endif
-#ifdef USE_KLONDIKE
-char *opt_klondike_options = NULL;
-#endif
-#ifdef USE_DRILLBIT
-char *opt_drillbit_options = NULL;
-char *opt_drillbit_auto = NULL;
-#endif
 char *opt_bab_options = NULL;
-#ifdef USE_BITMINE_A1
-char *opt_bitmine_a1_options = NULL;
-#endif
-#ifdef USE_DRAGONMINT_T1
-#include "dragonmint_t1.h"
-char *opt_dragonmint_t1_options = NULL;
-int opt_T1Pll[MCOMPAT_CONFIG_MAX_CHAIN_NUM] = {
-	DEFAULT_PLL, DEFAULT_PLL, DEFAULT_PLL, DEFAULT_PLL, 
-	DEFAULT_PLL, DEFAULT_PLL, DEFAULT_PLL, DEFAULT_PLL
-};
-int opt_T1Vol[MCOMPAT_CONFIG_MAX_CHAIN_NUM] = {
-	DEFAULT_VOLT, DEFAULT_VOLT, DEFAULT_VOLT, DEFAULT_VOLT,
-	DEFAULT_VOLT, DEFAULT_VOLT, DEFAULT_VOLT, DEFAULT_VOLT
-};
-int opt_T1VID[MCOMPAT_CONFIG_MAX_CHAIN_NUM] = {};
-bool opt_T1auto = true;
-bool opt_T1_efficient;
-bool opt_T1_performance;
-int opt_T1_target = 100;
-#endif
-#if defined(USE_ANT_S1) || defined(USE_ANT_S2)
-char *opt_bitmain_options;
-char *opt_set_bitmain_fan;
-char *opt_bitmain_freq;
-// Ignored
-bool opt_bitmain_nobeeper;
-bool opt_bitmain_notempoverctrl;
-bool opt_bitmain_homemode;
-#endif
-#ifdef USE_ANT_S2
-#ifndef USE_ANT_S3
-char *opt_bitmain_dev;
-#endif
-char *opt_bitmain_voltage = BITMAIN_VOLTAGE_DEF;
-#endif
-#ifdef USE_HASHFAST
-static char *opt_set_hfa_fan;
-#endif
 static char *opt_set_null;
-#ifdef USE_MINION
-int opt_minion_chipreport;
-char *opt_minion_cores;
-bool opt_minion_extra;
-char *opt_minion_freq;
-int opt_minion_freqchange = 1000;
-int opt_minion_freqpercent = 70;
-bool opt_minion_idlecount;
-int opt_minion_ledcount;
-int opt_minion_ledlimit = 98;
-bool opt_minion_noautofreq;
-bool opt_minion_overheat;
-int opt_minion_spidelay;
-char *opt_minion_spireset;
-int opt_minion_spisleep = 200;
-int opt_minion_spiusec;
-char *opt_minion_temp;
-#endif
-
 #ifdef USE_USBUTILS
 char *opt_usb_select = NULL;
 int opt_usbdump = -1;
@@ -355,12 +243,7 @@ static bool usb_reinit;
 char *opt_kernel_path;
 char *cgminer_path;
 bool opt_gen_stratum_work;
-
-#if defined(USE_BITFORCE)
-bool opt_bfl_noncerange;
-#endif
 #define QUIET	(opt_quiet || opt_realquiet)
-
 struct thr_info *control_thr;
 struct thr_info **mining_thr;
 static int gwsched_thr_id;
@@ -407,23 +290,6 @@ pthread_cond_t gws_cond;
 double rolling1, rolling5, rolling15;
 double total_rolling;
 double total_mhashes_done;
-
-#ifdef USE_BITMAIN_SOC
-char *opt_version_path = NULL;
-char displayed_hash_rate[16] = {0};
-char nonce_num10_string[NONCE_BUFF];
-char nonce_num30_string[NONCE_BUFF];
-char nonce_num60_string[NONCE_BUFF];
-char g_miner_version[256] = {0};
-char g_miner_compiletime[256] = {0};
-char g_miner_type[256] = {0};
-
-double new_total_mhashes_done;
-double new_total_secs = 1.0;
-// only used for total_secs, because we need use system info time, instead of real data time.
-time_t total_tv_start_sys;
-time_t total_tv_end_sys;
-#endif
 
 static struct timeval total_tv_start, total_tv_end;
 static struct timeval restart_tv_start, update_tv_start;
@@ -865,18 +731,6 @@ static char *set_int_1_to_65535(const char *arg, int *i)
 	return set_int_range(arg, i, 1, 65535);
 }
 
-#ifdef USE_AVALON8
-static char *set_int_0_to_1(const char *arg, int *i)
-{
-	return set_int_range(arg, i, 0, 1);
-}
-
-static char *set_int_0_to_7(const char *arg, int *i)
-{
-	return set_int_range(arg, i, 0, 7);
-}
-#endif
-
 static char *set_int_0_to_5(const char *arg, int *i)
 {
 	return set_int_range(arg, i, 0, 5);
@@ -886,20 +740,6 @@ static char *set_int_0_to_10(const char *arg, int *i)
 {
 	return set_int_range(arg, i, 0, 10);
 }
-
-#ifdef USE_DRAGONMINT_T1
-static char *set_int_voltage(const char *arg, int *i)
-{
-	return set_int_range(arg, i, CHIP_VOLT_MIN, CHIP_VOLT_MAX);
-}
-
-/* Intentionally does NOT accept zero so that zero means the value is NOT set
- * and has no effect. */
-static char *set_int_1_to_31(const char *arg, int *i)
-{
-	return set_int_range(arg, i, 1, 31);
-}
-#endif
 
 static char *set_int_0_to_100(const char *arg, int *i)
 {
@@ -970,15 +810,6 @@ static char __maybe_unused *set_int_0_to_4(const char *arg, int *i)
 {
 	return set_int_range(arg, i, 0, 4);
 }
-
-#ifdef USE_FPGA_SERIAL
-static char *opt_add_serial;
-static char *add_serial(char *arg)
-{
-	string_elist_add(arg, &scan_devices);
-	return NULL;
-}
-#endif
 
 void get_intrange(char *arg, int *val1, int *val2)
 {
@@ -1305,22 +1136,8 @@ static char *set_null(const char __maybe_unused *arg)
 	return NULL;
 }
 
-#ifdef USE_BITMAIN_SOC
-static char *set_version_path(const char *arg)
-{
-    opt_set_charp(arg, &opt_version_path);
-
-    return NULL;
-}
-#endif
-
 /* These options are available from config file or commandline */
 static struct opt_table opt_config_table[] = {
-#ifdef USE_ICARUS
-	OPT_WITH_ARG("--anu-freq",
-		     set_float_125_to_500, &opt_show_floatval, &opt_anu_freq,
-		     "Set AntminerU1/2 frequency in MHz, range 125-500"),
-#endif
 	OPT_WITH_ARG("--api-allow",
 		     opt_set_charp, NULL, &opt_api_allow,
 		     "Allow API access only to the given list of [G:]IP[/Prefix] addresses[/subnets]"),
@@ -1357,304 +1174,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--api-host",
 		     opt_set_charp, NULL, &opt_api_host,
 		     "Specify API listen address, default: 0.0.0.0"),
-#ifdef USE_ICARUS
-	OPT_WITH_ARG("--au3-freq",
-		     set_float_100_to_250, &opt_show_floatval, &opt_au3_freq,
-		     "Set AntminerU3 frequency in MHz, range 100-250"),
-	OPT_WITH_ARG("--au3-volt",
-		     set_int_0_to_9999, &opt_show_intval, &opt_au3_volt,
-		     "Set AntminerU3 voltage in mv, range 725-850, 0 to not set"),
-#endif
-#ifdef USE_AVALON
-	OPT_WITHOUT_ARG("--avalon-auto",
-			opt_set_bool, &opt_avalon_auto,
-			"Adjust avalon overclock frequency dynamically for best hashrate"),
-	OPT_WITH_ARG("--avalon-cutoff",
-		     set_int_0_to_100, opt_show_intval, &opt_avalon_overheat,
-		     "Set avalon overheat cut off temperature"),
-	OPT_WITH_CBARG("--avalon-fan",
-		     set_avalon_fan, NULL, &opt_set_avalon_fan,
-		     "Set fanspeed percentage for avalon, single value or range (default: 20-100)"),
-	OPT_WITH_CBARG("--avalon-freq",
-		     set_avalon_freq, NULL, &opt_set_avalon_freq,
-		     "Set frequency range for avalon-auto, single value or range"),
-	OPT_WITH_ARG("--avalon-options",
-		     opt_set_charp, NULL, &opt_avalon_options,
-		     "Set avalon options baud:miners:asic:timeout:freq:tech"),
-	OPT_WITH_ARG("--avalon-temp",
-		     set_int_0_to_100, opt_show_intval, &opt_avalon_temp,
-		     "Set avalon target temperature"),
-#endif
-#ifdef USE_AVALON2
-	OPT_WITH_CBARG("--avalon2-freq",
-		     set_avalon2_freq, NULL, &opt_set_avalon2_freq,
-		     "Set frequency range for Avalon2, single value or range, step: 25"),
-	OPT_WITH_CBARG("--avalon2-voltage",
-		     set_avalon2_voltage, NULL, &opt_set_avalon2_voltage,
-		     "Set Avalon2 core voltage, in millivolts, step: 125"),
-	OPT_WITH_CBARG("--avalon2-fan",
-		     set_avalon2_fan, NULL, &opt_set_avalon2_fan,
-		     "Set Avalon2 target fan speed"),
-	OPT_WITH_ARG("--avalon2-cutoff",
-		     set_int_0_to_100, opt_show_intval, &opt_avalon2_overheat,
-		     "Set Avalon2 overheat cut off temperature"),
-	OPT_WITHOUT_ARG("--avalon2-fixed-speed",
-		     set_avalon2_fixed_speed, &opt_avalon2_fan_fixed,
-		     "Set Avalon2 fan to fixed speed"),
-	OPT_WITH_ARG("--avalon2-polling-delay",
-		     set_int_1_to_65535, opt_show_intval, &opt_avalon2_polling_delay,
-		     "Set Avalon2 polling delay value (ms)"),
-#endif
-#ifdef USE_AVALON4
-	OPT_WITHOUT_ARG("--avalon4-automatic-voltage",
-		     opt_set_bool, &opt_avalon4_autov,
-		     "Automatic adjust voltage base on module DH"),
-	OPT_WITH_CBARG("--avalon4-voltage",
-		     set_avalon4_voltage, NULL, &opt_set_avalon4_voltage,
-		     "Set Avalon4 core voltage, in millivolts, step: 125"),
-	OPT_WITH_CBARG("--avalon4-freq",
-		     set_avalon4_freq, NULL, &opt_set_avalon4_freq,
-		     "Set frequency for Avalon4, 1 to 3 values, example: 445:385:370"),
-	OPT_WITH_CBARG("--avalon4-fan",
-		     set_avalon4_fan, NULL, &opt_set_avalon4_fan,
-		     "Set Avalon4 target fan speed range"),
-	OPT_WITH_ARG("--avalon4-temp",
-		     set_int_22_to_75, opt_show_intval, &opt_avalon4_temp_target,
-		     "Set Avalon4 target temperature"),
-	OPT_WITH_ARG("--avalon4-cutoff",
-		     set_int_42_to_85, opt_show_intval, &opt_avalon4_overheat,
-		     "Set Avalon4 overheat cut off temperature"),
-	OPT_WITH_ARG("--avalon4-polling-delay",
-		     set_int_1_to_65535, opt_show_intval, &opt_avalon4_polling_delay,
-		     "Set Avalon4 polling delay value (ms)"),
-	OPT_WITH_ARG("--avalon4-ntime-offset",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_ntime_offset,
-		     "Set Avalon4 MM ntime rolling max offset"),
-	OPT_WITH_ARG("--avalon4-aucspeed",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_aucspeed,
-		     "Set Avalon4 AUC IIC bus speed"),
-	OPT_WITH_ARG("--avalon4-aucxdelay",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_aucxdelay,
-		     "Set Avalon4 AUC IIC xfer read delay, 4800 ~= 1ms"),
-	OPT_WITH_ARG("--avalon4-miningmode",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_miningmode,
-		     "Set Avalon4 mining mode(0:custom, 1:eco, 2:normal, 3:turbo"),
-	OPT_WITHOUT_ARG("--avalon4-freezesafe",
-		     opt_set_bool, &opt_avalon4_freezesafe,
-		     "Make Avalon4 running as a radiator when stratum server failed"),
-	OPT_WITH_ARG("--avalon4-ntcb",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_ntcb,
-		     "Set Avalon4 MM NTC B value"),
-	OPT_WITH_ARG("--avalon4-freq-min",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_freq_min,
-		     "Set minimum frequency for Avalon4"),
-	OPT_WITH_ARG("--avalon4-freq-max",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_freq_max,
-		     "Set maximum frequency for Avalon4"),
-	OPT_WITHOUT_ARG("--avalon4-noncecheck-off",
-		     opt_set_invbool, &opt_avalon4_noncecheck,
-		     "Disable A3218 inside nonce check function"),
-	OPT_WITH_ARG("--avalon4-smart-speed",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_smart_speed,
-		     "Set smart speed, range 0-3. 0 means Disable"),
-	OPT_WITH_ARG("--avalon4-speed-bingo",
-		     set_int_1_to_255, opt_show_intval, &opt_avalon4_speed_bingo,
-		     "Set A3218 speed bingo for smart speed mode 1"),
-	OPT_WITH_ARG("--avalon4-speed-error",
-		     set_int_1_to_255, opt_show_intval, &opt_avalon4_speed_error,
-		     "Set A3218 speed error for smart speed mode 1"),
-	OPT_WITH_ARG("--avalon4-least-pll",
-		     set_int_0_to_7680, opt_show_intval, &opt_avalon4_least_pll_check,
-		     "Set least pll check threshold for smart speed mode 2"),
-	OPT_WITH_ARG("--avalon4-most-pll",
-		     set_int_0_to_7680, opt_show_intval, &opt_avalon4_most_pll_check,
-		     "Set most pll check threshold for smart speed mode 2"),
-	OPT_WITHOUT_ARG("--avalon4-iic-detect",
-		     opt_set_bool, &opt_avalon4_iic_detect,
-		     "Enable miner detect through iic controller"),
-	OPT_WITH_ARG("--avalon4-freqadj-time",
-		     set_int_1_to_60, opt_show_intval, &opt_avalon4_freqadj_time,
-		     "Set Avalon4 check interval when run in AVA4_FREQ_TEMPADJ_MODE"),
-	OPT_WITH_ARG("--avalon4-delta-temp",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_delta_temp,
-		     "Set Avalon4 delta temperature when reset freq in AVA4_FREQ_TEMPADJ_MODE"),
-	OPT_WITH_ARG("--avalon4-delta-freq",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_delta_freq,
-		     "Set Avalon4 delta freq when adjust freq in AVA4_FREQ_TEMPADJ_MODE"),
-	OPT_WITH_ARG("--avalon4-freqadj-temp",
-		     opt_set_intval, opt_show_intval, &opt_avalon4_freqadj_temp,
-		     "Set Avalon4 check temperature when run into AVA4_FREQ_TEMPADJ_MODE"),
-#endif
-#ifdef USE_AVALON7
-	OPT_WITH_CBARG("--avalon7-voltage",
-		     set_avalon7_voltage, NULL, &opt_set_avalon7_voltage,
-		     "Set Avalon7 default core voltage, in millivolts, step: 78"),
-	OPT_WITH_CBARG("--avalon7-voltage-level",
-		     set_avalon7_voltage_level, NULL, &opt_set_avalon7_voltage_level,
-		     "Set Avalon7 default level of core voltage, range:[0, 15], step: 1"),
-	OPT_WITH_CBARG("--avalon7-voltage-offset",
-		     set_avalon7_voltage_offset, NULL, &opt_set_avalon7_voltage_offset,
-		     "Set Avalon7 default offset of core voltage, range:[-2, 1], step: 1"),
-	OPT_WITH_CBARG("--avalon7-freq",
-		     set_avalon7_freq, NULL, &opt_set_avalon7_freq,
-		     "Set Avalon7 default frequency, range:[24, 1404], step: 12, example: 500"),
-	OPT_WITH_ARG("--avalon7-freq-sel",
-		     set_int_0_to_5, opt_show_intval, &opt_avalon7_freq_sel,
-		     "Set Avalon7 default frequency select, range:[0, 5], step: 1, example: 3"),
-	OPT_WITH_CBARG("--avalon7-fan",
-		     set_avalon7_fan, NULL, &opt_set_avalon7_fan,
-		     "Set Avalon7 target fan speed, range:[0, 100], step: 1, example: 0-100"),
-	OPT_WITH_ARG("--avalon7-temp",
-		     set_int_0_to_100, opt_show_intval, &opt_avalon7_temp_target,
-		     "Set Avalon7 target temperature, range:[0, 100]"),
-	OPT_WITH_ARG("--avalon7-polling-delay",
-		     set_int_1_to_65535, opt_show_intval, &opt_avalon7_polling_delay,
-		     "Set Avalon7 polling delay value (ms)"),
-	OPT_WITH_ARG("--avalon7-aucspeed",
-		     opt_set_intval, opt_show_intval, &opt_avalon7_aucspeed,
-		     "Set AUC3 IIC bus speed"),
-	OPT_WITH_ARG("--avalon7-aucxdelay",
-		     opt_set_intval, opt_show_intval, &opt_avalon7_aucxdelay,
-		     "Set AUC3 IIC xfer read delay, 4800 ~= 1ms"),
-	OPT_WITH_ARG("--avalon7-smart-speed",
-		     opt_set_intval, opt_show_intval, &opt_avalon7_smart_speed,
-		     "Set Avalon7 smart speed, range 0-1. 0 means Disable"),
-	OPT_WITH_ARG("--avalon7-th-pass",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon7_th_pass,
-		     "Set A3212 th pass value"),
-	OPT_WITH_ARG("--avalon7-th-fail",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon7_th_fail,
-		     "Set A3212 th fail value"),
-	OPT_WITH_ARG("--avalon7-th-init",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon7_th_init,
-		     "Set A3212 th init value"),
-	OPT_WITH_ARG("--avalon7-th-ms",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon7_th_ms,
-		     "Set A3212 th ms value"),
-	OPT_WITH_ARG("--avalon7-th-timeout",
-		     opt_set_uintval, opt_show_uintval, &opt_avalon7_th_timeout,
-		     "Set A3212 th timeout value"),
-	OPT_WITHOUT_ARG("--avalon7-iic-detect",
-		     opt_set_bool, &opt_avalon7_iic_detect,
-		     "Enable Avalon7 detect through iic controller"),
-	OPT_WITH_ARG("--avalon7-nonce-mask",
-		     set_int_24_to_32, opt_show_intval, &opt_avalon7_nonce_mask,
-		     "Set A3212 nonce mask, range 24-32."),
-	OPT_WITHOUT_ARG("--no-avalon7-asic-debug",
-		     opt_set_invbool, &opt_avalon7_asic_debug,
-		     "Disable A3212 debug."),
-#endif
-#ifdef USE_AVALON8
-	OPT_WITH_CBARG("--avalon8-voltage-level",
-		     set_avalon8_voltage_level, NULL, &opt_set_avalon8_voltage_level,
-		     "Set Avalon8 default level of core voltage, range:[0, 15], step: 1"),
-	OPT_WITH_CBARG("--avalon8-voltage-level-offset",
-		     set_avalon8_voltage_level_offset, NULL, &opt_set_avalon8_voltage_level_offset,
-		     "Set Avalon8 default offset of core voltage level, range:[-2, 1], step: 1"),
-	OPT_WITH_CBARG("--avalon8-freq",
-		     set_avalon8_freq, NULL, &opt_set_avalon8_freq,
-		     "Set Avalon8 default frequency, range:[25, 1200], step: 25, example: 800"),
-	OPT_WITH_ARG("--avalon8-freq-sel",
-		     set_int_0_to_3, opt_show_intval, &opt_avalon8_freq_sel,
-		     "Set Avalon8 default frequency select, range:[0, 3], step: 1, example: 3"),
-	OPT_WITH_CBARG("--avalon8-fan",
-		     set_avalon8_fan, NULL, &opt_set_avalon8_fan,
-		     "Set Avalon8 target fan speed, range:[0, 100], step: 1, example: 0-100"),
-	OPT_WITH_ARG("--avalon8-temp",
-		     set_int_0_to_100, opt_show_intval, &opt_avalon8_temp_target,
-		     "Set Avalon8 target temperature, range:[0, 100]"),
-	OPT_WITH_ARG("--avalon8-polling-delay",
-		     set_int_1_to_65535, opt_show_intval, &opt_avalon8_polling_delay,
-		     "Set Avalon8 polling delay value (ms)"),
-	OPT_WITH_ARG("--avalon8-aucspeed",
-		     opt_set_intval, opt_show_intval, &opt_avalon8_aucspeed,
-		     "Set AUC3 IIC bus speed"),
-	OPT_WITH_ARG("--avalon8-aucxdelay",
-		     opt_set_intval, opt_show_intval, &opt_avalon8_aucxdelay,
-		     "Set AUC3 IIC xfer read delay, 4800 ~= 1ms"),
-	OPT_WITH_ARG("--avalon8-smart-speed",
-		     opt_set_intval, opt_show_intval, &opt_avalon8_smart_speed,
-		     "Set Avalon8 smart speed, range 0-1. 0 means Disable"),
-	OPT_WITH_ARG("--avalon8-th-pass",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon8_th_pass,
-		     "Set A3210 th pass value"),
-	OPT_WITH_ARG("--avalon8-th-fail",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon8_th_fail,
-		     "Set A3210 th fail value"),
-	OPT_WITH_ARG("--avalon8-th-init",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon8_th_init,
-		     "Set A3210 th init value"),
-	OPT_WITH_ARG("--avalon8-th-ms",
-		     set_int_0_to_65535, opt_show_intval, &opt_avalon8_th_ms,
-		     "Set A3210 th ms value"),
-	OPT_WITH_ARG("--avalon8-th-timeout",
-		     opt_set_uintval, opt_show_uintval, &opt_avalon8_th_timeout,
-		     "Set A3210 th timeout value"),
-	OPT_WITH_ARG("--avalon8-th-add",
-		     set_int_0_to_1, opt_show_intval, &opt_avalon8_th_add,
-		     "Set A3210 th add value"),
-	OPT_WITHOUT_ARG("--avalon8-iic-detect",
-		     opt_set_bool, &opt_avalon8_iic_detect,
-		     "Enable Avalon8 detect through iic controller"),
-	OPT_WITH_ARG("--avalon8-nonce-mask",
-		     set_int_24_to_32, opt_show_intval, &opt_avalon8_nonce_mask,
-		     "Set A3210 nonce mask, range 24-32."),
-	OPT_WITH_ARG("--avalon8-nonce-check",
-		     set_int_0_to_1, opt_show_intval, &opt_avalon8_nonce_check,
-		     "Set A3210 nonce check, range 0-1."),
-	OPT_WITH_ARG("--avalon8-roll-enable",
-		     set_int_0_to_1, opt_show_intval, &opt_avalon8_roll_enable,
-		     "Set A3210 roll enable, range 0-1."),
-	OPT_WITH_ARG("--avalon8-mux-l2h",
-		     set_int_0_to_2, opt_show_intval, &opt_avalon8_mux_l2h,
-		     "Set Avalon8 mux l2h, range 0-2."),
-	OPT_WITH_ARG("--avalon8-mux-h2l",
-		     set_int_0_to_1, opt_show_intval, &opt_avalon8_mux_h2l,
-		     "Set Avalon8 mux h2l, range 0-1."),
-	OPT_WITH_ARG("--avalon8-h2ltime0-spd",
-		     set_int_0_to_255, opt_show_intval, &opt_avalon8_h2ltime0_spd,
-		     "Set Avalon8 h2ltime0 spd, range 0-255."),
-	OPT_WITH_ARG("--avalon8-spdlow",
-		     set_int_0_to_3, opt_show_intval, &opt_avalon8_spdlow,
-		     "Set Avalon8 spdlow, range 0-3."),
-	OPT_WITH_ARG("--avalon8-spdhigh",
-		     set_int_0_to_3, opt_show_intval, &opt_avalon8_spdhigh,
-		     "Set Avalon8 spdhigh, range 0-3."),
-	OPT_WITH_CBARG("--avalon8-cinfo-asic",
-		     set_avalon8_asic_otp, NULL, &opt_set_avalon8_asic_otp,
-		     "Set Avalon8 cinfo asic index, range:[0, 25], step: 1"),
-	OPT_WITH_ARG("--avalon8-pid-p",
-		     set_int_0_to_9999, opt_show_intval, &opt_avalon8_pid_p,
-		     "Set Avalon8 pid-p, range 0-9999."),
-	OPT_WITH_ARG("--avalon8-pid-i",
-		     set_int_0_to_9999, opt_show_intval, &opt_avalon8_pid_i,
-		     "Set Avalon8 pid-i, range 0-9999."),
-	OPT_WITH_ARG("--avalon8-pid-d",
-		     set_int_0_to_9999, opt_show_intval, &opt_avalon8_pid_d,
-		     "Set Avalon8 pid-d, range 0-9999."),
-#endif
-#ifdef USE_AVALON_MINER
-	OPT_WITH_CBARG("--avalonm-voltage",
-		     set_avalonm_voltage, NULL, &opt_set_avalonm_voltage,
-		     "Set Avalon miner core voltage, in millivolts, step: 125"),
-	OPT_WITH_CBARG("--avalonm-freq",
-		     set_avalonm_freq, NULL, &opt_set_avalonm_freq,
-		     "Set frequency for Avalon miner, 1 to 3 values, example: 275:250:200"),
-	OPT_WITH_ARG("--avalonm-ntime-offset",
-		     opt_set_intval, opt_show_intval, &opt_avalonm_ntime_offset,
-		     "Set Avalon miner ntime rolling max offset, range 0-4"),
-	OPT_WITH_ARG("--avalonm-spispeed",
-		     opt_set_intval, opt_show_intval, &opt_avalonm_spispeed,
-		     "Set spi speed for Avalon miner"),
-	OPT_WITHOUT_ARG("--avalonm-automatic-freq",
-			opt_set_bool, &opt_avalonm_autof,
-			"Automatic adjust frequency base on chip HW"),
-#endif
-#ifdef USE_BAB
-	OPT_WITH_ARG("--bab-options",
-		     opt_set_charp, NULL, &opt_bab_options,
-		     "Set bab options max:def:min:up:down:hz:delay:trf"),
-#endif
 	OPT_WITHOUT_ARG("--balance",
 		     set_balance, &pool_strategy,
 		     "Change multipool strategy from failover to even share balance"),
@@ -1667,204 +1186,9 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--benchmark",
 			opt_set_bool, &opt_benchmark,
 			"Run cgminer in benchmark mode - produces no shares"),
-#if defined(USE_BITFORCE)
-	OPT_WITHOUT_ARG("--bfl-range",
-			opt_set_bool, &opt_bfl_noncerange,
-			"Use nonce range on bitforce devices if supported"),
-#endif
-#ifdef USE_BFLSC
-	OPT_WITH_ARG("--bflsc-overheat",
-		     set_int_0_to_200, opt_show_intval, &opt_bflsc_overheat,
-		     "Set overheat temperature where BFLSC devices throttle, 0 to disable"),
-#endif
-#ifdef USE_AVALON
-	OPT_WITH_ARG("--bitburner-voltage",
-		     opt_set_intval, NULL, &opt_bitburner_core_voltage,
-		     "Set BitBurner (Avalon) core voltage, in millivolts"),
-	OPT_WITH_ARG("--bitburner-fury-voltage",
-		     opt_set_intval, NULL, &opt_bitburner_fury_core_voltage,
-		     "Set BitBurner Fury core voltage, in millivolts"),
-	OPT_WITH_ARG("--bitburner-fury-options",
-		     opt_set_charp, NULL, &opt_bitburner_fury_options,
-		     "Override avalon-options for BitBurner Fury boards baud:miners:asic:timeout:freq"),
-#endif
-#if defined(USE_ANT_S1) || defined(USE_ANT_S2)
-	OPT_WITH_ARG("--bitmain-cutoff",
-		     set_int_0_to_100, opt_show_intval, &opt_bitmain_overheat,
-		     "Set bitmain overheat cut off temperature"),
-	OPT_WITH_CBARG("--bitmain-fan",
-		     set_bitmain_fan, NULL, &opt_set_bitmain_fan,
-		     "Set fanspeed percentage for bitmain, single value or range (default: 20-100)"),
-	OPT_WITH_CBARG("--bitmain-freq",
-		     opt_set_charp, NULL, &opt_bitmain_freq,
-		     "Set bitmain freq options timeout:freq:regdata"),
-	OPT_WITHOUT_ARG("--bitmain-hwerror",
-			opt_set_bool, &opt_bitmain_hwerror,
-			"Set bitmain device detect hardware error"),
-	OPT_WITH_ARG("--bitmain-options",
-		     opt_set_charp, NULL, &opt_bitmain_options,
-#ifdef USE_ANT_S1
-		     "Set bitmain options baud:miners:asic:timeout:freq:regdata"
-#else
-		     "Set bitmain options baud:miners:asic:ignored..."
-#endif
-			),
-	OPT_WITH_ARG("--bitmain-temp",
-		     set_int_0_to_100, opt_show_intval, &opt_bitmain_temp,
-		     "Set bitmain target temperature"),
-	OPT_WITH_ARG("--bitmain-workdelay",
-		     set_int_0_to_100, opt_show_intval, &opt_bitmain_workdelay,
-		     "Set bitmain work delay (ms) 0-100"),
-	// Ignored
-	OPT_WITHOUT_ARG("--bitmain-auto",
-			opt_set_bool, &opt_bitmain_auto,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-nobeeper",
-			opt_set_bool, &opt_bitmain_nobeeper,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-notempoverctrl",
-			opt_set_bool, &opt_bitmain_notempoverctrl,
-			opt_hidden),
-#ifdef USE_ANT_S1
-	// S1 has no effect
-	OPT_WITHOUT_ARG("--bitmainbeeper",
-			opt_set_bool, &opt_bitmain_beeper,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmaintempoverctrl",
-			opt_set_bool, &opt_bitmain_tempoverctrl,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-homemode",
-			opt_set_bool, &opt_bitmain_homemode,
-			opt_hidden),
-#endif
-#endif
-#ifdef USE_ANT_S2
-	OPT_WITH_ARG("--bitmain-voltage",
-		     opt_set_charp, NULL, &opt_bitmain_voltage,
-		     "Set bitmain voltage (default: "BITMAIN_VOLTAGE_DEF")"),
-#ifndef USE_ANT_S3
-	OPT_WITH_ARG("--bitmain-dev",
-		     opt_set_charp, NULL, &opt_bitmain_dev,
-		     "Set bitmain device"),
-#endif
-	OPT_WITHOUT_ARG("--bitmainbeeper",
-			opt_set_bool, &opt_bitmain_beeper,
-			"Set bitmain beeper ringing"),
-	OPT_WITHOUT_ARG("--bitmain-checkall",
-			opt_set_bool, &opt_bitmain_checkall,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmain-checkn2diff",
-			opt_set_bool, &opt_bitmain_checkn2diff,
-			opt_hidden),
-	OPT_WITHOUT_ARG("--bitmaintempoverctrl",
-			opt_set_bool, &opt_bitmain_tempoverctrl,
-			"Set bitmain stop runing when temprerature is over 80 degree Celsius"),
-	OPT_WITHOUT_ARG("--bitmain-homemode",
-			opt_set_bool, &opt_bitmain_homemode,
-			"Set bitmain miner to home mode"),
-#endif
-#ifdef USE_BITMINE_A1
-	OPT_WITH_ARG("--bitmine-a1-options",
-		     opt_set_charp, NULL, &opt_bitmine_a1_options,
-		     "Bitmine A1 options ref_clk_khz:sys_clk_khz:spi_clk_khz:override_chip_num"),
-#endif
 	OPT_WITHOUT_ARG("--block-check",
 			opt_set_bool, &opt_blockcheck,
 			"Run a block diff check of the binary then exit"),
-#ifdef USE_BITFURY
-	OPT_WITH_ARG("--bxf-bits",
-		     set_int_32_to_63, opt_show_intval, &opt_bxf_bits,
-		     "Set max BXF/HXF bits for overclocking"),
-	OPT_WITH_ARG("--bxf-debug",
-		     set_int_0_to_4, opt_show_intval, &opt_bxf_debug,
-		    "BXF: Debug all USB I/O, > is to the board(s), < is from the board(s)"),
-	OPT_WITH_ARG("--bxf-temp-target",
-		     set_int_0_to_200, opt_show_intval, &opt_bxf_temp_target,
-		     "Set target temperature for BXF/HXF devices"),
-	OPT_WITH_ARG("--bxm-bits",
-		     set_int_0_to_100, opt_show_intval, &opt_bxm_bits,
-		     "Set BXM bits for overclocking"),
-#endif
-#ifdef USE_BITFURY16
-	OPT_WITHOUT_ARG("--bf16-set-clock",
-			opt_set_bool, &opt_bf16_set_clock,
-			"Set clock to all chips"),
-	OPT_WITH_ARG("--bf16-test-chip",
-			opt_set_charp, NULL, &opt_bf16_test_chip,
-			"Test BF16 chip communication: [board_id:bcm250_id:chip_id]"),
-	OPT_WITH_ARG("--bf16-clock",
-			opt_set_charp, NULL, &opt_bf16_clock,
-			"BF16 chips clock value"),
-	OPT_WITH_ARG("--bf16-renonce-clock",
-			opt_set_charp, NULL, &opt_bf16_renonce_clock,
-			"BF16 renonce chip clock value"),
-	OPT_WITHOUT_ARG("--bf16-enable-stats",
-			opt_set_bool, &opt_bf16_stats_enabled,
-			"Enable statistics thread"),
-	OPT_WITHOUT_ARG("--bf16-disable-power-management",
-			opt_set_bool, &opt_bf16_power_management_disabled,
-			"Disable automatic power management"),
-	OPT_WITH_ARG("--bf16-renonce",
-			set_int_0_to_2, NULL, &opt_bf16_renonce,
-			"Renonce functionality: 0 - disabled, 1 - one chip, 2 - chip per board"),
-#ifdef MINER_X5
-	OPT_WITHOUT_ARG("--bf16-manual-pid-enable",
-			opt_set_bool, &opt_bf16_manual_pid_enabled,
-			"Enable manual PID regulator"),
-#endif
-#ifdef MINER_X6
-	OPT_WITHOUT_ARG("--bf16-manual-pid-disable",
-			opt_set_bool, &opt_bf16_manual_pid_disabled,
-			"Disable manual PID regulator"),
-#endif
-	OPT_WITH_ARG("--bf16-fan-speed",
-		     set_int_0_to_100, NULL, &opt_bf16_fan_speed,
-		     "Set fan speed in '%' range (0 - 100)"),
-	OPT_WITH_ARG("--bf16-target-temp",
-		     set_int_0_to_100, NULL, &opt_bf16_target_temp,
-		     "Set control board target temperature range (0 - 100)"),
-	OPT_WITH_ARG("--bf16-alarm-temp",
-		     set_int_0_to_100, NULL, &opt_bf16_alarm_temp,
-		     "Set control board alarm temperature range (0 - 100)"),
-#endif
-#ifdef USE_BITMAIN_SOC
-	OPT_WITH_ARG("--version-file",
-	set_version_path, NULL, opt_hidden,
-	"Set miner version file"),
-	
-	OPT_WITHOUT_ARG("--bitmain-fan-ctrl",
-	opt_set_bool, &opt_bitmain_fan_ctrl,
-	"Enable bitmain miner fan controlling"),
-
-	OPT_WITH_ARG("--bitmain-fan-pwm",
-	set_int_0_to_100, opt_show_intval, &opt_bitmain_fan_pwm,
-	"Set bitmain fan pwm percentage 0~100"),
-
-	OPT_WITH_ARG("--bitmain-freq",
-	set_int_0_to_9999,opt_show_intval, &opt_bitmain_soc_freq,
-	"Set frequency"),
-
-	OPT_WITH_ARG("--bitmain-voltage",
-	set_int_0_to_9999,opt_show_intval, &opt_bitmain_soc_voltage,
-	"Set voltage"),
-
-	OPT_WITHOUT_ARG("--fixed-freq",
-	opt_set_bool, &opt_fixed_freq,
-	"Set bitmain miner use fixed freq"),
-
-	OPT_WITHOUT_ARG("--no-pre-heat",
-	opt_set_false, &opt_pre_heat,
-	"Set bitmain miner doesn't pre heat"),
-
-	OPT_WITH_ARG("--multi-version",
-	opt_set_intval, NULL, &opt_multi_version,
-	"Multi version mining!"),
-#endif
-#ifdef USE_BLOCKERUPTER
-        OPT_WITH_ARG("--bet-clk",
-                     opt_set_intval, opt_show_intval, &opt_bet_clk,
-                     "Set Block Erupter clock"),
-#endif
 #if defined(USE_GEKKO) || defined(USE_BM1397)
 	OPT_WITH_ARG("--gekko-serial",
 			 opt_set_charp, NULL, &opt_gekko_serial,
@@ -1957,14 +1281,6 @@ static struct opt_table opt_config_table[] = {
 			opt_set_bool, &opt_compact,
 			"Use compact display without per device statistics"),
 #endif
-#ifdef USE_COINTERRA
-	OPT_WITH_ARG("--cta-load",
-		set_int_0_to_255, opt_show_intval, &opt_cta_load,
-		"Set load for CTA devices, 0-255 range"),
-	OPT_WITH_ARG("--ps-load",
-		set_int_0_to_100, opt_show_intval, &opt_ps_load,
-		"Set power supply load for CTA devices, 0-100 range"),
-#endif
 	OPT_WITHOUT_ARG("--debug|-D",
 		     enable_debug, &opt_debug,
 		     "Enable debug output"),
@@ -1976,106 +1292,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--disable-rejecting",
 			opt_set_bool, &opt_disable_pool,
 			"Automatically disable pools that continually reject shares"),
-#ifdef USE_DRAGONMINT_T1
-	OPT_WITH_ARG("--dragonmint-t1-options",
-		     opt_set_charp, NULL, &opt_dragonmint_t1_options,
-	             "Dragonmint T1 options ref_clk_khz:sys_clk_khz:spi_clk_khz:override_chip_num"),
-	OPT_WITHOUT_ARG("--T1efficient",
-			opt_set_bool, &opt_T1_efficient,
-		        "Tune Dragonmint T1 per chain voltage and frequency for optimal efficiency"),
-	OPT_WITHOUT_ARG("--T1factory",
-			opt_set_invbool, &opt_T1auto,
-		        opt_hidden),
-	OPT_WITHOUT_ARG("--T1noauto",
-			opt_set_invbool, &opt_T1auto,
-			"Disable Dragonmint T1 per chain auto voltage and frequency tuning"),
-	OPT_WITHOUT_ARG("--T1performance",
-			opt_set_bool, &opt_T1_performance,
-		        "Tune Dragonmint T1 per chain voltage and frequency for maximum performance"),
-	OPT_WITH_ARG("--T1fantarget",
-			opt_set_intval, opt_show_intval, &opt_T1_target,
-			"Throttle T1 frequency to keep fan less than target fan speed"),
-	OPT_WITH_ARG("--T1Pll1",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[0],
-	            "Set PLL Clock 1 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll2",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[1],
-	            "Set PLL Clock 2 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll3",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[2],
-	            "Set PLL Clock 3 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll4",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[3],
-	            "Set PLL Clock 4 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll5",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[4],
-	            "Set PLL Clock 5 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll6",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[5],
-	            "Set PLL Clock 6 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll7",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[6],
-	            "Set PLL Clock 7 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Pll8",
-		     set_int_0_to_9999, opt_show_intval, &opt_T1Pll[7],
-	            "Set PLL Clock 8 in Dragonmint T1 broad 1 chip (-1: 1000MHz, >0:Lookup PLL table)"),
-	OPT_WITH_ARG("--T1Volt1",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[0],
-	     "Dragonmint T1 set voltage 1 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt2",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[1],
-	     "Dragonmint T1 set voltage 2 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt3",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[2],
-	     "Dragonmint T1 set voltage 3 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt4",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[3],
-	     "Dragonmint T1 set voltage 4 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt5",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[4],
-	     "Dragonmint T1 set voltage 5 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt6",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[5],
-	     "Dragonmint T1 set voltage 6 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt7",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[6],
-	     "Dragonmint T1 set voltage 7 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1Volt8",
-	     set_int_voltage, opt_show_intval, &opt_T1Vol[7],
-	     "Dragonmint T1 set voltage 8 - VID overrides if set (390-425)"),
-	OPT_WITH_ARG("--T1VID1",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[0],
-	     "Dragonmint T1 set VID 1 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID2",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[1],
-	     "Dragonmint T1 set VID 2 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID3",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[2],
-	     "Dragonmint T1 set VID 3 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID4",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[3],
-	     "Dragonmint T1 set VID 4 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID5",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[4],
-	     "Dragonmint T1 set VID 5 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID6",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[5],
-	     "Dragonmint T1 set VID 6 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID7",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[6],
-	     "Dragonmint T1 set VID 7 in noauto - Overrides voltage if set (1-31)"),
-	OPT_WITH_ARG("--T1VID8",
-	     set_int_1_to_31, opt_show_intval, &opt_T1VID[7],
-	     "Dragonmint T1 set VID 8 in noauto - Overrides voltage if set (1-31)"),
-#endif
-#ifdef USE_DRILLBIT
-        OPT_WITH_ARG("--drillbit-options",
-		     opt_set_charp, NULL, &opt_drillbit_options,
-		     "Set drillbit options <int|ext>:clock[:clock_divider][:voltage]"),
-        OPT_WITH_ARG("--drillbit-auto",
-		     opt_set_charp, NULL, &opt_drillbit_auto,
-		     "Enable drillbit automatic tuning <every>:[<gooderr>:<baderr>:<maxerr>]"),
-#endif
 	OPT_WITH_ARG("--expiry|-E",
 		     set_null, NULL, &opt_set_null,
 		     opt_hidden),
@@ -2088,46 +1304,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--fix-protocol",
 			opt_set_bool, &opt_fix_protocol,
 			"Do not redirect to stratum protocol from GBT"),
-#ifdef USE_HASHFAST
-	OPT_WITHOUT_ARG("--hfa-dfu-boot",
-			opt_set_bool, &opt_hfa_dfu_boot,
-			opt_hidden),
-	OPT_WITH_ARG("--hfa-hash-clock",
-		     set_int_0_to_9999, opt_show_intval, &opt_hfa_hash_clock,
-		     "Set hashfast clock speed"),
-	OPT_WITH_ARG("--hfa-fail-drop",
-		     set_int_0_to_100, opt_show_intval, &opt_hfa_fail_drop,
-		     "Set how many MHz to drop clockspeed each failure on an overlocked hashfast device"),
-	OPT_WITH_CBARG("--hfa-fan",
-		     set_hfa_fan, NULL, &opt_set_hfa_fan,
-		     "Set fanspeed percentage for hashfast, single value or range (default: 10-85)"),
-	OPT_WITH_ARG("--hfa-name",
-		     opt_set_charp, NULL, &opt_hfa_name,
-		     "Set a unique name for a single hashfast device specified with --usb or the first device found"),
-	OPT_WITHOUT_ARG("--hfa-noshed",
-			opt_set_bool, &opt_hfa_noshed,
-			"Disable hashfast dynamic core disabling feature"),
-	OPT_WITH_ARG("--hfa-ntime-roll",
-		     opt_set_intval, NULL, &opt_hfa_ntime_roll,
-		     opt_hidden),
-	OPT_WITH_ARG("--hfa-options",
-		     opt_set_charp, NULL, &opt_hfa_options,
-		     "Set hashfast options name:clock (comma separated)"),
-	OPT_WITHOUT_ARG("--hfa-pll-bypass",
-			opt_set_bool, &opt_hfa_pll_bypass,
-			opt_hidden),
-	OPT_WITH_ARG("--hfa-temp-overheat",
-		     set_int_0_to_200, opt_show_intval, &opt_hfa_overheat,
-		     "Set the hashfast overheat throttling temperature"),
-	OPT_WITH_ARG("--hfa-temp-target",
-		     set_int_0_to_200, opt_show_intval, &opt_hfa_target,
-		     "Set the hashfast target temperature (0 to disable)"),
-#endif
-#ifdef USE_HASHRATIO
-	OPT_WITH_CBARG("--hro-freq",
-		       set_hashratio_freq, NULL, &opt_hashratio_freq,
-		       "Set the hashratio clock frequency"),
-#endif
 	OPT_WITH_ARG("--hotplug",
 		     set_int_0_to_9999, NULL, &hotplug_time,
 #ifdef USE_USBUTILS
@@ -2136,24 +1312,6 @@ static struct opt_table opt_config_table[] = {
 		     opt_hidden
 #endif
 		    ),
-#ifdef USE_ICARUS
-	OPT_WITH_ARG("--icarus-options",
-		     opt_set_charp, NULL, &opt_icarus_options,
-		     opt_hidden),
-	OPT_WITH_ARG("--icarus-timing",
-		     opt_set_charp, NULL, &opt_icarus_timing,
-		     opt_hidden),
-#endif
-#if defined(HAVE_MODMINER)
-	OPT_WITH_ARG("--kernel-path|-K",
-		     opt_set_charp, opt_show_charp, &opt_kernel_path,
-	             "Specify a path to where bitstream files are"),
-#endif
-#ifdef USE_KLONDIKE
-	OPT_WITH_ARG("--klondike-options",
-		     opt_set_charp, NULL, &opt_klondike_options,
-		     "Set klondike options clock:temptarget"),
-#endif
 	OPT_WITHOUT_ARG("--load-balance",
 		     set_loadbalance, &pool_strategy,
 		     "Change multipool strategy from failover to quota based balance"),
@@ -2166,66 +1324,11 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--mac-yield",
 			opt_set_bool, &opt_mac_yield,
 			"Allow yield on old macs (default dont)"),
-#ifdef USE_MINION
-	OPT_WITH_ARG("--minion-chipreport",
-		     set_int_0_to_100, opt_show_intval, &opt_minion_chipreport,
-		     "Seconds to report chip 5min hashrate, range 0-100 (default: 0=disabled)"),
-	OPT_WITH_ARG("--minion-cores",
-		     opt_set_charp, NULL, &opt_minion_cores,
-		     opt_hidden),
-	OPT_WITHOUT_ARG("--minion-extra",
-		     opt_set_bool, &opt_minion_extra,
-		     opt_hidden),
-	OPT_WITH_ARG("--minion-freq",
-		     opt_set_charp, NULL, &opt_minion_freq,
-		     "Set minion chip frequencies in MHz, single value or comma list, range 100-1400 (default: 1200)"),
-	OPT_WITH_ARG("--minion-freqchange",
-		     set_int_0_to_9999, opt_show_intval, &opt_minion_freqchange,
-		     "Millisecond total time to do frequency changes (default: 1000)"),
-	OPT_WITH_ARG("--minion-freqpercent",
-		     set_int_0_to_100, opt_show_intval, &opt_minion_freqpercent,
-		     "Percentage to use when starting up a chip (default: 70%)"),
-	OPT_WITHOUT_ARG("--minion-idlecount",
-		     opt_set_bool, &opt_minion_idlecount,
-		     "Report when IdleCount is >0 or changes"),
-	OPT_WITH_ARG("--minion-ledcount",
-		     set_int_0_to_100, opt_show_intval, &opt_minion_ledcount,
-		     "Turn off led when more than this many chips below the ledlimit (default: 0)"),
-	OPT_WITH_ARG("--minion-ledlimit",
-		     set_int_0_to_200, opt_show_intval, &opt_minion_ledlimit,
-		     "Turn off led when chips GHs are below this (default: 90)"),
-	OPT_WITHOUT_ARG("--minion-noautofreq",
-		     opt_set_bool, &opt_minion_noautofreq,
-		     "Disable automatic frequency adjustment"),
-	OPT_WITHOUT_ARG("--minion-overheat",
-		     opt_set_bool, &opt_minion_overheat,
-		     "Enable directly halting any chip when the status exceeds 100C"),
-	OPT_WITH_ARG("--minion-spidelay",
-		     set_int_0_to_9999, opt_show_intval, &opt_minion_spidelay,
-		     "Add a delay in microseconds after each SPI I/O"),
-	OPT_WITH_ARG("--minion-spireset",
-		     opt_set_charp, NULL, &opt_minion_spireset,
-		     "SPI regular reset: iNNN for I/O count or sNNN for seconds - 0 means none"),
-	OPT_WITH_ARG("--minion-spisleep",
-		     set_int_0_to_9999, opt_show_intval, &opt_minion_spisleep,
-		     "Sleep time in milliseconds when doing an SPI reset"),
-	OPT_WITH_ARG("--minion-spiusec",
-		     set_int_0_to_9999, NULL, &opt_minion_spiusec,
-		     opt_hidden),
-	OPT_WITH_ARG("--minion-temp",
-		     opt_set_charp, NULL, &opt_minion_temp,
-		     "Set minion chip temperature threshold, single value or comma list, range 120-160 (default: 135C)"),
-#endif
 #if defined(unix) || defined(__APPLE__)
 	OPT_WITH_ARG("--monitor|-m",
 		     opt_set_charp, NULL, &opt_stderr_cmd,
 		     "Use custom pipe cmd for output messages"),
 #endif // defined(unix)
-#ifdef USE_BITFURY
-	OPT_WITH_ARG("--nfu-bits",
-		     set_int_32_to_63, opt_show_intval, &opt_nfu_bits,
-		     "Set nanofury bits for overclocking, range 32-63"),
-#endif
 	OPT_WITHOUT_ARG("--net-delay",
 			opt_set_bool, &opt_delaynet,
 			"Impose small delays in networking to not overload slow routers"),
@@ -2235,11 +1338,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--no-submit-stale",
 			opt_set_invbool, &opt_submit_stale,
 		        "Don't submit shares if they are detected as stale"),
-#ifdef USE_BITFURY
-	OPT_WITH_ARG("--osm-led-mode",
-		     set_int_0_to_4, opt_show_intval, &opt_osm_led_mode,
-		     "Set LED mode for OneStringMiner devices"),
-#endif
 	OPT_WITH_ARG("--pass|-p",
 		     set_pass, NULL, &opt_set_null,
 		     "Password for bitcoin JSON-RPC server"),
@@ -2269,22 +1367,12 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--retry-pause",
 		     set_null, NULL, &opt_set_null,
 		     opt_hidden),
-#ifdef USE_ICARUS
-	OPT_WITH_ARG("--rock-freq",
-		     set_float_125_to_500, &opt_show_floatval, &opt_rock_freq,
-		     "Set RockMiner frequency in MHz, range 125-500"),
-#endif
 	OPT_WITH_ARG("--rotate",
 		     set_rotate, NULL, &opt_set_null,
 		     "Change multipool strategy from failover to regularly rotate at N minutes"),
 	OPT_WITHOUT_ARG("--round-robin",
 		     set_rr, &pool_strategy,
 		     "Change multipool strategy from failover to round robin on failure"),
-#ifdef USE_FPGA_SERIAL
-	OPT_WITH_CBARG("--scan-serial|-S",
-		     add_serial, NULL, &opt_add_serial,
-		     "Serial port to probe for Serial FPGA Mining device"),
-#endif
 	OPT_WITH_ARG("--scan-time|-s",
 		     set_null, NULL, &opt_set_null,
 		     opt_hidden),
@@ -2310,11 +1398,6 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITHOUT_ARG("--syslog",
 			opt_set_bool, &use_syslog,
 			"Use system log for output messages (default: standard error)"),
-#endif
-#if defined(USE_BITFORCE) || defined(USE_MODMINER) || defined(USE_BFLSC)
-	OPT_WITH_CBARG("--temp-cutoff",
-		     set_temp_cutoff, opt_show_intval, &opt_set_temp_cutoff,
-		     "Temperature where a device will be automatically disabled, one value or comma separated list"),
 #endif
 	OPT_WITHOUT_ARG("--text-only|-T",
 			opt_set_invbool, &use_curses,
@@ -2528,87 +1611,11 @@ extern const char *opt_argv0;
 static char *opt_verusage_and_exit(const char *extra)
 {
 	printf("%s\nBuilt with "
-#ifdef USE_ANT_S1
-		"ant.S1 "
-#endif
-#ifdef USE_ANT_S2
-#ifdef USE_ANT_S3
-		"ant.S3 "
-#else
-		"ant.S2 "
-#endif
-#endif
-#ifdef USE_AVALON
-		"avalon "
-#endif
-#ifdef USE_AVALON2
-		"avalon2 "
-#endif
-#ifdef USE_AVALON4
-		"avalon4 "
-#endif
-#ifdef USE_AVALON7
-		"avalon7 "
-#endif
-#ifdef USE_AVALON8
-		"avalon8 "
-#endif
-#ifdef USE_AVALON_MINER
-		"avalon miner"
-#endif
-#ifdef USE_BFLSC
-		"bflsc "
-#endif
-#ifdef USE_BITFORCE
-		"bitforce "
-#endif
-#ifdef USE_BITFURY
-		"bitfury "
-#endif
-#ifdef USE_BITFURY16
-		"bitfury16 "
-#endif
-#ifdef USE_COINTERRA
-		"cointerra "
-#endif
-#ifdef USE_DRILLBIT
-                "drillbit "
-#endif
 #ifdef USE_GEKKO
 		"gekko "
 #endif
 #ifdef USE_BM1397
 		"BM1397 "
-#endif
-#ifdef USE_HASHFAST
-		"hashfast "
-#endif
-#ifdef USE_ICARUS
-		"icarus "
-#endif
-#ifdef USE_KLONDIKE
-		"klondike "
-#endif
-#ifdef USE_KNC
-		"KnC "
-#endif
-#ifdef USE_BAB
-		"BaB "
-#endif
-#ifdef USE_MINION
-		"minion "
-#endif
-#ifdef USE_MODMINER
-		"modminer "
-#endif
-#ifdef USE_BITMINE_A1
-		"Bitmine.A1 "
-#endif
-#ifdef USE_SP10
-		"spondoolies "
-#endif
-#ifdef USE_SP30
-        "sp30 "
 #endif
 
 		"mining support.\n"
@@ -3011,23 +2018,6 @@ static void gbt_merkle_bins(struct pool *pool, json_t *transaction_arr)
 			len = strlen(txn);
 			cg_memcpy(pool->txn_data + ofs, txn, len);
 			ofs += len;
-#if 0
-			// This logic no longer works post-segwit. The txids will always need to be sent,
-			// as the full txns will also contain witness data that must be omitted in these
-			// hashes.
-			if (!hash) {
-				unsigned char *txn_bin;
-				int txn_len;
-
-				txn_len = len / 2;
-				txn_bin = cgmalloc(txn_len);
-				hex2bin(txn_bin, txn, txn_len);
-				/* This is needed for pooled mining since only
-				 * transaction data and not hashes are sent */
-				gen_hash(txn_bin, hashbin + 32 + 32 * i, txn_len);
-				continue;
-			}
-#endif
 			if (!txid) {
 				applog(LOG_ERR, "missing txid in gbt_merkle_bins");
 				return;
@@ -5124,9 +4114,6 @@ static void _copy_work(struct work *work, const struct work *base_work, int noff
 	}
 	if (base_work->coinbase)
 		work->coinbase = strdup(base_work->coinbase);
-#ifdef USE_BITMAIN_SOC
-	work->version = base_work->version;
-#endif
 }
 
 void set_work_ntime(struct work *work, int ntime)
@@ -5903,10 +4890,6 @@ void write_config(FILE *fcfg)
 			     (void *)opt->cb_arg == (void *)set_int_0_to_4 ||
 			     (void *)opt->cb_arg == (void *)set_int_32_to_63 ||
 			     (void *)opt->cb_arg == (void *)set_int_22_to_75 ||
-#ifdef USE_DRAGONMINT_T1
-			     (void *)opt->cb_arg == (void *)set_int_voltage ||
-			     (void *)opt->cb_arg == (void *)set_int_1_to_31 ||
-#endif
 			     (void *)opt->cb_arg == (void *)set_int_1_to_60 ||
 			     (void *)opt->cb_arg == (void *)set_int_42_to_85)) {
 				fprintf(fcfg, ",\n\"%s\" : \"%d\"", p+2, *(int *)opt->u.arg);
@@ -5967,20 +4950,6 @@ static time_t hashdisplay_t;
 void zero_stats(void)
 {
 	int i;
-#ifdef USE_BITMAIN_SOC
-	struct sysinfo sInfo;
-	if (sysinfo(&sInfo))
-	{
-		applog(LOG_INFO, "Failed to get sysinfo, errno:%u, reason:%s\n",
-			   errno, strerror(errno));
-		total_tv_start_sys=time(NULL);
-	}
-	else
-	{
-		total_tv_start_sys=sInfo.uptime;
-	}
-
-#endif
 	cgtime(&total_tv_start);
 	copy_time(&tv_hashmeter, &total_tv_start);
 	total_rolling = 0;
@@ -5988,9 +4957,6 @@ void zero_stats(void)
 	rolling5 = 0;
 	rolling15 = 0;
 	total_mhashes_done = 0;
-#ifdef USE_BITMAIN_SOC
-	new_total_mhashes_done = 0;
-#endif
 	total_getworks = 0;
 	total_accepted = 0;
 	total_rejected = 0;
@@ -6001,9 +4967,6 @@ void zero_stats(void)
 	total_go = 0;
 	total_ro = 0;
 	total_secs = 1.0;
-#ifdef USE_BITMAIN_SOC
-	new_total_secs = 1.0;
-#endif
 	total_diff1 = 0;
 	found_blocks = 0;
 	total_diff_accepted = 0;
@@ -6707,20 +5670,6 @@ static void hashmeter(int thr_id, uint64_t hashes_done)
 	time_t now_t;
 	int diff_t;
 
-#ifdef USE_BITMAIN_SOC
-	struct sysinfo sInfo;
-	if (sysinfo(&sInfo))
-	{
-		applog(LOG_INFO, "Failed to get sysinfo, errno:%u, reason:%s\n",
-			   errno, strerror(errno));
-		total_tv_end_sys=time(NULL);
-	}
-	else
-	{
-		total_tv_end_sys=sInfo.uptime;
-	}
-#endif
-
 	cgtime(&total_tv_end);
 	tv_tdiff = tdiff(&total_tv_end, &tv_hashmeter);
 	now_t = total_tv_end.tv_sec;
@@ -6795,11 +5744,7 @@ static void hashmeter(int thr_id, uint64_t hashes_done)
 	decay_time(&rolling5, hashes_done, tv_tdiff, 300.0);
 	decay_time(&rolling15, hashes_done, tv_tdiff, 900.0);
 	global_hashrate = llround(total_rolling) * 1000000;
-#ifndef USE_BITMAIN_SOC
 	total_secs = tdiff(&total_tv_end, &total_tv_start);
-#else
-	total_secs = total_tv_end_sys*1.0-total_tv_start_sys*1.0;
-#endif
 	if (showlog) {
 		char displayed_hashes[16], displayed_rolling[16];
 		char displayed_r1[16], displayed_r5[16], displayed_r15[16];
@@ -7768,73 +6713,6 @@ void set_target(unsigned char *dest_target, double diff)
 	}
 	cg_memcpy(dest_target, target, 32);
 }
-
-#if defined (USE_AVALON2) || defined (USE_AVALON4) || defined (USE_AVALON7) || defined (USE_AVALON8) || defined (USE_AVALON_MINER) || defined (USE_HASHRATIO)
-bool submit_nonce2_nonce(struct thr_info *thr, struct pool *pool, struct pool *real_pool,
-			 uint32_t nonce2, uint32_t nonce,  uint32_t ntime)
-{
-	const int thr_id = thr->id;
-	struct cgpu_info *cgpu = thr->cgpu;
-	struct device_drv *drv = cgpu->drv;
-	struct work *work = make_work();
-	bool ret;
-
-	cg_wlock(&pool->data_lock);
-	pool->nonce2 = nonce2;
-	cg_wunlock(&pool->data_lock);
-
-	gen_stratum_work(pool, work);
-	roll_work_ntime(work, ntime);
-
-	work->pool = real_pool;
-	/* Inherit the sdiff from the original stratum */
-	work->sdiff = pool->sdiff;
-
-	work->thr_id = thr_id;
-	work->work_block = work_block;
-	work->pool->works++;
-
-	work->mined = true;
-	work->device_diff = MIN(drv->max_diff, work->work_difficulty);
-	work->device_diff = MAX(drv->min_diff, work->device_diff);
-
-	ret = submit_nonce(thr, work, nonce);
-	free_work(work);
-	return ret;
-}
-#endif
-
-#ifdef USE_BITMAIN_SOC
-void get_work_by_nonce2(struct thr_info *thr,
-						struct work **work,
-						struct pool *pool,
-						struct pool *real_pool,
-						uint64_t nonce2,
-						uint32_t version)
-{
-	*work = make_work();
-	const int thr_id = thr->id;
-	struct cgpu_info *cgpu = thr->cgpu;
-	struct device_drv *drv = cgpu->drv;
-	cg_wlock(&pool->data_lock);
-	pool->nonce2 = nonce2;
-	//if(pool->support_vil) // comment as default
-	version = Swap32(version);
-	cg_memcpy(pool->header_bin, &version, 4);
-	cg_wunlock(&pool->data_lock);
-
-	gen_stratum_work(pool, *work);
-
-	(*work)->pool = real_pool;
-
-	(*work)->thr_id = thr_id;
-	(*work)->work_block = work_block;
-	(*work)->pool->works++;
-
-	(*work)->mined = true;
-	(*work)->version = version;
-}
-#endif
 
 #if STRATUM_WORK_TIMING
 cglock_t swt_lock;
@@ -9644,20 +8522,6 @@ void print_summary(void)
 
 static void clean_up(bool restarting)
 {
-#ifdef USE_BITMAIN_SOC
-	struct sysinfo sInfo;
-	if (sysinfo(&sInfo))
-	{
-		applog(LOG_INFO, "Failed to get sysinfo, errno:%u, reason:%s\n",
-			   errno, strerror(errno));
-		total_tv_end_sys=time(NULL);
-	}
-	else
-	{
-		total_tv_end_sys=sInfo.uptime;
-	}
-#endif
-
 #ifdef USE_USBUTILS
 	usb_polling = false;
 	pthread_join(usb_poll_thread, NULL);
@@ -10151,20 +9015,6 @@ static void adjust_mostdevs(void)
 		most_devices = total_devices - zombie_devs;
 }
 
-#ifdef USE_ICARUS
-bool icarus_get_device_id(struct cgpu_info *cgpu)
-{
-	static struct _cgpu_devid_counter *devids = NULL;
-	struct _cgpu_devid_counter *d;
-
-	HASH_FIND_STR(devids, cgpu->drv->name, d);
-	if (d)
-		return (d->lastid + 1);
-	else
-		return 0;
-}
-#endif
-
 bool add_cgpu(struct cgpu_info *cgpu)
 {
 	static struct _cgpu_devid_counter *devids = NULL;
@@ -10398,31 +9248,6 @@ static void initialise_usb(void) {
 }
 #else
 #define initialise_usb() {}
-#endif
-
-#ifdef USE_BITMAIN_SOC
-void setStartTimePoint()
-{
-	char logstr[256];
-	struct sysinfo sInfo;
-	if (sysinfo(&sInfo))
-	{
-		sprintf(logstr, "Failed to get sysinfo, errno:%u, reason:%s\n",
-				errno, strerror(errno));
-		writeInitLogFile(logstr);
-
-		total_tv_start_sys=time(NULL);
-		total_tv_end_sys=total_tv_start_sys+1;
-	}
-	else
-	{
-		total_tv_start_sys=sInfo.uptime;
-		total_tv_end_sys=total_tv_start_sys+1;
-
-		sprintf(logstr, "setStartTimePoint total_tv_start_sys=%d total_tv_end_sys=%d\n",total_tv_start_sys, total_tv_end_sys);
-		writeInitLogFile(logstr);
-	}
-}
 #endif
 
 int main(int argc, char *argv[])
@@ -10666,66 +9491,6 @@ ASSERTbc(sizeof(test_work.hash) == (BC_MAX_BITS / HEX_BYTE));
 		}
 		set_target(bench_target, 32);
 	}
-
-#ifdef USE_BITMAIN_SOC
-	if(opt_version_path)
-	{
-		FILE * fpversion = fopen(opt_version_path, "rb");
-		char tmp[256] = {0};
-		int len = 0;
-		char * start = 0;
-
-		if(fpversion == NULL)
-		{
-			applog(LOG_ERR, "Open miner version file %s error", opt_version_path);
-		}
-		else
-		{
-			len = fread(tmp, 1, 256, fpversion);
-
-			if(len <= 0)
-			{
-				applog(LOG_ERR, "Read miner version file %s error %d", opt_version_path, len);
-			}
-			else
-			{
-				start = strstr(tmp, "\n");
-
-				if(start == NULL)
-				{
-					strcpy(g_miner_compiletime, tmp);
-				}
-				else
-				{
-					cg_memcpy(g_miner_compiletime, tmp, start-tmp);
-					strcpy(g_miner_type, start+1);
-				}
-
-				if(g_miner_compiletime[strlen(g_miner_compiletime)-1] == '\n')
-				{
-					g_miner_compiletime[strlen(g_miner_compiletime)-1] = 0;
-				}
-
-				if(g_miner_compiletime[strlen(g_miner_compiletime)-1] == '\r')
-				{
-					g_miner_compiletime[strlen(g_miner_compiletime)-1] = 0;
-				}
-
-				if(g_miner_type[strlen(g_miner_type)-1] == '\n')
-				{
-					g_miner_type[strlen(g_miner_type)-1] = 0;
-				}
-
-				if(g_miner_type[strlen(g_miner_type)-1] == '\r')
-				{
-					g_miner_type[strlen(g_miner_type)-1] = 0;
-				}
-			}
-		}
-		applog(LOG_ERR, "Miner compile time: %s type: %s", g_miner_compiletime, g_miner_type);
-	}
-#endif
-
 #ifdef HAVE_CURSES
 	if (opt_realquiet || opt_display_devs || opt_decode)
 		use_curses = false;
@@ -10961,22 +9726,6 @@ begin_bench:
 
 	cgtime_real(&total_tv_start);
 	get_datestamp(datestamp, sizeof(datestamp), &total_tv_start);
-
-#ifdef USE_BITMAIN_SOC
-	struct sysinfo sInfo;
-	if (sysinfo(&sInfo))
-	{
-		applog(LOG_INFO, "Failed to get sysinfo, errno:%u, reason:%s\n",
-			   errno, strerror(errno));
-		total_tv_end_sys=time(NULL);
-		total_tv_start_sys=time(NULL);
-	}
-	else
-	{
-		total_tv_end_sys=sInfo.uptime;
-		total_tv_start_sys=sInfo.uptime;
-	}
-#endif
 	cgtime(&total_tv_start);
 	cgtime(&total_tv_end);
 	cgtime(&tv_hashmeter);

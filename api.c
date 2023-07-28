@@ -26,18 +26,8 @@
 #include "util.h"
 #include "klist.h"
 
-#if defined(USE_BFLSC) || defined(USE_AVALON) || defined(USE_AVALON2) || defined(USE_AVALON4) || \
-  defined(USE_HASHFAST) || defined(USE_BITFURY) || defined(USE_BITFURY16) || defined(USE_BLOCKERUPTER) || defined(USE_KLONDIKE) || \
-	defined(USE_KNC) || defined(USE_BAB) || defined(USE_DRAGONMINT_T1) || defined(USE_DRILLBIT) || \
-	defined(USE_MINION) || defined(USE_COINTERRA) || defined(USE_BITMINE_A1) || \
-	defined(USE_ANT_S1) || defined(USE_ANT_S2) || defined(USE_ANT_S3) || defined(USE_SP10) || \
-	defined(USE_SP30) || defined(USE_ICARUS) || defined(USE_HASHRATIO) || defined(USE_AVALON_MINER) || \
-	defined(USE_AVALON7) || defined(USE_AVALON8) || defined(USE_BITMAIN_SOC) || defined(USE_GEKKO) || defined(USE_BM1397)
+#if defined(USE_GEKKO) || defined(USE_BM1397)
 #define HAVE_AN_ASIC 1
-#endif
-
-#if defined(USE_BITFORCE) || defined(USE_MODMINER)
-#define HAVE_AN_FPGA 1
 #endif
 
 // BUFSIZ varies on Windows and Linux
@@ -163,73 +153,12 @@ static const char *FALSESTR = "false";
 static const char *SHA256STR = "sha256";
 
 static const char *DEVICECODE = ""
-#ifdef USE_ANT_S1
-			"ANT "
-#endif
-#ifdef USE_ANT_S2
-			"AS2 "
-#endif
-#ifdef USE_ANT_S3
-			"AS3 "
-#endif
-#ifdef USE_AVALON
-			"AVA "
-#endif
-#ifdef USE_BAB
-			"BaB "
-#endif
-#ifdef USE_BFLSC
-			"BAS "
-#endif
-#ifdef USE_BITFORCE
-			"BFL "
-#endif
-#ifdef USE_BITFURY
-			"BFU "
-#endif
-#ifdef USE_BLOCKERUPTER
-			"BET "
-#endif
-#ifdef USE_DRILLBIT
-			"DRB "
-#endif
-#ifdef USE_DRAGONMINT_T1
-			"DT1 "
-#endif
 #ifdef USE_GEKKO
 			"GSX "
 #endif
-#ifdef USE_HASHFAST
-			"HFA "
+#ifdef USE_BM1397
+			"BM7 "
 #endif
-#ifdef USE_HASHRATIO
-			"HRO "
-#endif
-#ifdef USE_BITMINE_A1
-			"BA1 "
-#endif
-#ifdef USE_ICARUS
-			"ICA "
-#endif
-#ifdef USE_KNC
-			"KnC "
-#endif
-#ifdef USE_MINION
-			"MBA "
-#endif
-#ifdef USE_MODMINER
-			"MMQ "
-#endif
-#ifdef USE_COINTERRA
-			"CTA "
-#endif
-#ifdef USE_SP10
-			"SPN "
-#endif
-#ifdef USE_SP30
-      "S30 "
-#endif
-
 
 			"";
 
@@ -258,10 +187,6 @@ static const char *OSINFO =
 #define _STATUS		"STATUS"
 #define _VERSION	"VERSION"
 #define _MINECONFIG	"CONFIG"
-
-#ifdef HAVE_AN_FPGA
-#define _PGA		"PGA"
-#endif
 
 #ifdef HAVE_AN_ASIC
 #define _ASC		"ASC"

@@ -252,43 +252,12 @@ static inline int fsync (int fd)
  * trying to claim same chip but different devices. Adding a device here will
  * update all macros in the code that use the *_PARSE_COMMANDS macros for each
  * listed driver. */
-#define FPGA_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
-	DRIVER_ADD_COMMAND(bitforce) \
-	DRIVER_ADD_COMMAND(modminer)
 
 #define ASIC_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
-	DRIVER_ADD_COMMAND(ants1) \
-	DRIVER_ADD_COMMAND(ants2) \
-	DRIVER_ADD_COMMAND(ants3) \
-	DRIVER_ADD_COMMAND(avalon) \
-	DRIVER_ADD_COMMAND(avalon2) \
-	DRIVER_ADD_COMMAND(avalon4) \
-	DRIVER_ADD_COMMAND(avalon7) \
-	DRIVER_ADD_COMMAND(avalon8) \
-	DRIVER_ADD_COMMAND(avalonm) \
-	DRIVER_ADD_COMMAND(bab) \
-	DRIVER_ADD_COMMAND(bflsc) \
-	DRIVER_ADD_COMMAND(bitfury) \
-	DRIVER_ADD_COMMAND(bitfury16) \
-	DRIVER_ADD_COMMAND(bitmineA1) \
-	DRIVER_ADD_COMMAND(blockerupter) \
-	DRIVER_ADD_COMMAND(cointerra) \
 	DRIVER_ADD_COMMAND(gekko) \
 	DRIVER_ADD_COMMAND(bm1397) \
-	DRIVER_ADD_COMMAND(dragonmintT1) \
-	DRIVER_ADD_COMMAND(hashfast) \
-	DRIVER_ADD_COMMAND(drillbit) \
-	DRIVER_ADD_COMMAND(hashratio) \
-	DRIVER_ADD_COMMAND(icarus) \
-	DRIVER_ADD_COMMAND(klondike) \
-	DRIVER_ADD_COMMAND(knc) \
-	DRIVER_ADD_COMMAND(minion) \
-	DRIVER_ADD_COMMAND(sp10) \
-	DRIVER_ADD_COMMAND(sp30) \
-	DRIVER_ADD_COMMAND(bitmain_soc)
 
 #define DRIVER_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
-	FPGA_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
 	ASIC_PARSE_COMMANDS(DRIVER_ADD_COMMAND)
 
 #define DRIVER_ENUM(X) DRIVER_##X,
@@ -479,31 +448,6 @@ struct cgpu_info {
 	bool blacklisted;
 	bool nozlp; // Device prefers no zero length packet
 #endif
-#if defined(USE_AVALON) || defined(USE_AVALON2) || defined (USE_AVALON_MINER)
-	struct work **works;
-	int work_array;
-	int queued;
-	int results;
-#endif
-#ifdef USE_MODMINER
-	char fpgaid;
-	unsigned char clock;
-	pthread_mutex_t *modminer_mutex;
-#endif
-#ifdef USE_BITFORCE
-	struct timeval work_start_tv;
-	unsigned int wait_ms;
-	unsigned int sleep_ms;
-	double avg_wait_f;
-	unsigned int avg_wait_d;
-	uint32_t nonces;
-	bool nonce_range;
-	bool polling;
-	bool flash_led;
-#endif /* USE_BITFORCE */
-#if defined(USE_BITFORCE) || defined(USE_BFLSC)
-	pthread_mutex_t device_mutex;
-#endif /* USE_BITFORCE || USE_BFLSC */
 	enum dev_enable deven;
 	int accepted;
 	int rejected;
@@ -528,13 +472,6 @@ struct cgpu_info {
 	bool new_work;
 
 	double temp;
-#ifdef USE_DRAGONMINT_T1
-	double temp_max;
-	double temp_min;
-	int fan_duty;
-	int chainNum;
-	double mhs_av;
-#endif
 	int cutofftemp;
 
 	int64_t diff1;
@@ -1043,19 +980,7 @@ extern bool opt_api_network;
 extern bool opt_delaynet;
 extern time_t last_getwork;
 extern bool opt_restart;
-#ifdef USE_ICARUS
-extern char *opt_icarus_options;
-extern char *opt_icarus_timing;
-extern float opt_anu_freq;
-extern float opt_au3_freq;
-extern int opt_au3_volt;
-extern float opt_rock_freq;
-#endif
 extern bool opt_worktime;
-#ifdef USE_AVALON
-extern char *opt_avalon_options;
-extern char *opt_bitburner_fury_options;
-#endif
 #if defined(USE_GEKKO) || defined(USE_BM1397)
 extern char *opt_gekko_serial;
 extern bool opt_gekko_noboost;
@@ -1084,73 +1009,11 @@ extern int opt_gekko_start_freq;
 extern int opt_gekko_step_delay;
 extern int opt_gekko_tune2;
 #endif
-#ifdef USE_KLONDIKE
-extern char *opt_klondike_options;
-#endif
-#ifdef USE_DRILLBIT
-extern char *opt_drillbit_options;
-extern char *opt_drillbit_auto;
-#endif
-#ifdef USE_BAB
-extern char *opt_bab_options;
-#endif
-#ifdef USE_BITMINE_A1
-extern char *opt_bitmine_a1_options;
-#endif
-#ifdef USE_DRAGONMINT_T1
-extern char *opt_dragonmint_t1_options;
-extern int opt_T1Pll[];
-extern int opt_T1Vol[];
-extern int opt_T1VID[];
-extern bool opt_T1auto;
-extern bool opt_T1_efficient;
-extern bool opt_T1_performance;
-extern int opt_T1_target;
-#endif
-#ifdef USE_ANT_S1
-extern char *opt_bitmain_options;
-extern char *opt_bitmain_freq;
-extern bool opt_bitmain_hwerror;
-#endif
-#if (defined(USE_ANT_S2) || defined(USE_ANT_S3))
-#ifndef USE_ANT_S3
-extern char *opt_bitmain_dev;
-#endif
-extern char *opt_bitmain_options;
-extern char *opt_bitmain_freq;
-extern bool opt_bitmain_hwerror;
-extern bool opt_bitmain_checkall;
-extern bool opt_bitmain_checkn2diff;
-extern bool opt_bitmain_beeper;
-extern bool opt_bitmain_tempoverctrl;
-extern char *opt_bitmain_voltage;
-#endif
-#ifdef USE_MINION
-extern int opt_minion_chipreport;
-extern char *opt_minion_cores;
-extern bool opt_minion_extra;
-extern char *opt_minion_freq;
-extern int opt_minion_freqchange;
-extern int opt_minion_freqpercent;
-extern bool opt_minion_idlecount;
-extern int opt_minion_ledcount;
-extern int opt_minion_ledlimit;
-extern bool opt_minion_noautofreq;
-extern bool opt_minion_overheat;
-extern int opt_minion_spidelay;
-extern char *opt_minion_spireset;
-extern int opt_minion_spisleep;
-extern int opt_minion_spiusec;
-extern char *opt_minion_temp;
-#endif
 #ifdef USE_USBUTILS
 extern char *opt_usb_select;
 extern int opt_usbdump;
 extern bool opt_usb_list_all;
 extern cgsem_t usb_resource_sem;
-#endif
-#ifdef USE_BITFORCE
-extern bool opt_bfl_noncerange;
 #endif
 extern int swork_id;
 
@@ -1200,18 +1063,6 @@ extern pthread_cond_t restart_cond;
 extern void clear_stratum_shares(struct pool *pool);
 extern void clear_pool_work(struct pool *pool);
 extern void set_target(unsigned char *dest_target, double diff);
-#if defined (USE_AVALON2) || defined (USE_AVALON4) || defined (USE_AVALON7) || defined (USE_AVALON8) || defined (USE_AVALON_MINER) || defined (USE_HASHRATIO)
-bool submit_nonce2_nonce(struct thr_info *thr, struct pool *pool, struct pool *real_pool,
-			 uint32_t nonce2, uint32_t nonce, uint32_t ntime);
-#endif
-#ifdef USE_BITMAIN_SOC
-void get_work_by_nonce2(struct thr_info *thr,
-						struct work **work,
-						struct pool *pool,
-						struct pool *real_pool,
-						uint64_t nonce2,
-						uint32_t version);
-#endif
 extern int restart_wait(struct thr_info *thr, unsigned int mstime);
 
 extern void raise_cgminer(void);
@@ -1270,22 +1121,6 @@ extern double current_diff;
 extern uint64_t best_diff;
 extern struct timeval block_timeval;
 extern char *workpadding;
-
-#ifdef USE_BITMAIN_SOC
-extern char displayed_hash_rate[16];
-#define NONCE_BUFF 4096
-extern char nonce_num10_string[NONCE_BUFF];
-extern char nonce_num30_string[NONCE_BUFF];
-extern char nonce_num60_string[NONCE_BUFF];
-extern char g_miner_version[256];
-extern char g_miner_compiletime[256];
-extern char g_miner_type[256];
-extern double new_total_mhashes_done;
-extern double new_total_secs;
-extern time_t total_tv_start_sys;
-extern time_t total_tv_end_sys;
-extern void writeInitLogFile(char *logstr);
-#endif
 
 struct curl_ent {
 	CURL *curl;
@@ -1459,11 +1294,6 @@ struct pool {
 	uint32_t current_height;
 
 	struct timeval tv_lastwork;
-#ifdef USE_BITMAIN_SOC
-    bool support_vil;
-    int version_num;
-    int version[4];
-#endif
 };
 
 #define GETWORK_MODE_TESTPOOL 'T'
@@ -1541,9 +1371,6 @@ struct work {
 	struct timeval	tv_work_start;
 	struct timeval	tv_work_found;
 	char		getwork_mode;
-#ifdef USE_BITMAIN_SOC
-    int version;
-#endif
 };
 
 // enable grossly global stratum work stats
@@ -1558,34 +1385,6 @@ extern uint64_t stratum_work_max;
 extern uint64_t stratum_work_time0;
 extern uint64_t stratum_work_time10;
 extern uint64_t stratum_work_time100;
-#endif
-
-#ifdef USE_MODMINER
-struct modminer_fpga_state {
-	bool work_running;
-	struct work running_work;
-	struct timeval tv_workstart;
-	uint32_t hashes;
-
-	char next_work_cmd[46];
-	char fpgaid;
-
-	bool overheated;
-	bool new_work;
-
-	uint32_t shares;
-	uint32_t shares_last_hw;
-	uint32_t hw_errors;
-	uint32_t shares_to_good;
-	uint32_t timeout_fail;
-	uint32_t success_more;
-	struct timeval last_changed;
-	struct timeval last_nonce;
-	struct timeval first_work;
-	bool death_stage_one;
-	bool tried_two_byte_temp;
-	bool one_byte_temp;
-};
 #endif
 
 #define TAILBUFSIZ 64
