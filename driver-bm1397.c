@@ -13,6 +13,8 @@
 #include "crc.h"
 #include "compat.h"
 #include <unistd.h>
+#include <gpiod.h>
+
 
 #ifdef __GNUC__
 #if __GNUC__ >= 7
@@ -1514,13 +1516,64 @@ static void compac_flush_work(struct cgpu_info *compac)
 	compac_update_work(compac);
 }
 
+
+
+struct gpiod_chip *gpio_chip;
+struct gpiod_line *gpio_line;
+
+#define GPIO_CHIP_NAME "gpiochip1"
+#define GPIO_LINE_OFFSET 28
+
+int init_gpio()
+{
+    gpio_chip = gpiod_chip_open_by_name(GPIO_CHIP_NAME);
+    if (!gpio_chip)
+    {
+        perror("Failed to open GPIO chip");
+        return -1;
+    }
+    // Get the GPIO line
+    gpio_line = gpiod_chip_get_line(gpio_chip, GPIO_LINE_OFFSET);
+    if (!gpio_line)
+    {
+        perror("Failed to get GPIO line");
+        gpiod_chip_close(gpio_chip);
+        return -1;
+    }
+
+    // Request the GPIO line
+    int ret = gpiod_line_request_output(gpio_line, "gpio-reset", 0);
+    if (ret < 0)
+    {
+        perror("Failed to request GPIO line");
+        gpiod_line_release(gpio_line);
+        gpiod_chip_close(gpio_chip);
+        return -1;
+    }
+    return 0;
+
+}
+
+void toggle_gpio()
+{
+    // Toggle the GPIO line
+    gpiod_line_set_value(gpio_line, 0);
+    usleep(5000000); // Delay for 100 milliseconds
+    gpiod_line_set_value(gpio_line, 1);
+}
 static void compac_toggle_reset(struct cgpu_info *compac)
 {
+	
 	struct COMPAC_INFO *info = compac->device_data;
 	unsigned short usb_val;
 
 	applog(info->log_wide,"%d: %s %d - Toggling ASIC nRST to reset",
 		compac->cgminer_id, compac->drv->name, compac->device_id);
+
+	// toggle gpio reset pin to reset ASIC
+
+
+	int fd;
 
 	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_RESET, info->interface, C_RESET);
 	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_DATA, FTDI_VALUE_DATA_BTS, info->interface, C_SETDATA);
