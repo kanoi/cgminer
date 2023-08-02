@@ -9,7 +9,7 @@ TARGET_ARCH=arm-linux-gnueabihf
 PROJECT=cgminer-hestiia-edition
 
 # Path to the source code on the host machine
-SOURCE_CODE_DIR=/home/$USER/${PROJECT}
+SOURCE_CODE_DIR=/home/$USER/workspace/${PROJECT}
 
 # Function to set up chroot environment and build the project
 function cross_compile_build {
