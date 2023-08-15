@@ -12,7 +12,10 @@
 #include "math.h"
 #include "miner.h"
 #include "usbutils.h"
+#include "uart_utils.h"
 #include "klist.h"
+
+#include "driver_bm1397_utils.h"
 
 #define JOB_MAX      0x7F
 #define BUFFER_MAX   0xFF
@@ -48,8 +51,6 @@ enum miner_state {
 };
 
 enum miner_asic {
-	BM1384 = 1,
-	BM1387,
 	BM1397
 };
 
@@ -100,52 +101,45 @@ enum asic_state {
 
 #define CHCMP(_t1, _t2) (CHBASE(_t1) == CHBASE(_t2))
 
-struct GEKKOCHIP
+struct S_BM1397_CHIP
 {
-	// seconds time of [offset]
-	time_t zerosec;
-	// the position of [0]
-	int offset;
-	// number of nonces in each range
-	int noncenum[CHNUM];
-	// number of nonces in 0..last-1
-	int noncesum;
-	// last used offset 0 based
-	int last;
+	time_t time_t_zero_sec; // seconds time of [offset]
+	int32_t i32_offset; // the position of [0]
+	int32_t t_i32_nb_nonces_ranges[CHNUM]; // number of nonces in each range
+	int32_t i32_nb_nonces; // number of nonces in 0..last-1
+	int32_t i32_last_used_offset; // last used offset 0 based
 };
-
-
-struct ASIC_INFO {
-	struct timeval last_nonce;              // Last time nonce was found
-	float frequency;                        // Current frequency
-	float frequency_set;                    // set_frequency
-	bool frequency_updated;                 // Initiate check for new frequency
-	uint32_t frequency_attempt;             // attempts of set_frequency
-	uint32_t dups;                          // Duplicate nonce counter
-	uint32_t dupsall;			// Total duplicate nonce counter
-	enum asic_state state;
-	enum asic_state last_state;
-	struct timeval state_change_time;       // Device startup time
-	struct timeval last_frequency_adjust;   // Last time of frequency adjust
-	struct timeval last_frequency_ping;     // Last time of frequency ping
-	struct timeval last_frequency_reply;    // Last time of frequency reply
-	uint32_t prev_nonce;         // Last nonce found
-	float fullscan_ms;           // Estimated time(ms) for full nonce range
-	uint32_t fullscan_us;        // Estimated time(us) for full nonce range
-	uint64_t hashrate;           // Estimated hashrate = cores x chips x frequency
-	float frequency_reply;
+struct S_ASIC_INFO {
+	struct timeval s_tv_last_nonce;              	// Last time nonce was found
+	float f_frequency;                        		// Current frequency
+	float f_frequency_set;                    		// set_frequency
+	bool b_frequency_updated;                 		// Initiate check for new frequency
+	uint32_t u32_frequency_attempt;             	// attempts of set_frequency
+	uint32_t u32_duplicate_nonce_countr;            // Duplicate nonce counter
+	uint32_t u32_total_duplicate_nonce_counter;		// Total duplicate nonce counter
+	enum asic_state e_asic_state;					// Current i32_asic state
+	enum asic_state e_asic_state_last;				// Previous i32_asic state
+	struct timeval s_tv_startup_time;       		// Device startup time
+	struct timeval s_tv_last_frequency_adjust;   	// Last time of frequency adjust
+	struct timeval s_tv_last_frequency_ping;     	// Last time of frequency ping
+	struct timeval s_tv_last_frequency_reply;    	// Last time of frequency reply
+	uint32_t u32_last_found_nonce;         		// Last nonce found
+	float f_fullscan_duration_ms;           	// Estimated time(ms) for full nonce range
+	uint32_t u32_fullscan_duration;        		// Estimated time(us) for full nonce range
+	uint64_t u64_hashrate;          		 	// Estimated hashrate = cores x chips x frequency
+	float f_frequency_reply;					// TODO - to document
 	
-	int nonces;
-	struct GEKKOCHIP gc;	// running nonce buffer
+	int32_t i32_nonces;		// TODO - to document
+	struct S_BM1397_CHIP s_bm1397_chip;	// running nonce buffer
 };
 
 struct COMPAC_NONCE
 {
-	int asic;
-	unsigned char rx[BUFFER_MAX];
-	size_t len;
-	size_t prelen;
-	struct timeval when;
+	int32_t i32_asic;
+	unsigned char tu8_rx_buffer[BUFFER_MAX];
+	size_t sizet_len;
+	size_t sizet_previous_len;
+	struct timeval s_tv_when;
 };
 
 #define DATA_NONCE(_item) ((struct COMPAC_NONCE *)(_item->data))
@@ -183,8 +177,8 @@ static int cur_attempt[] = { 0, -4, -8, -12 };
 // a time jump without any nonces will reset the GEKKOHASH data
 //  this would normally be a miner failure, so should reset anyway,
 //  however under normal mining operation, using 10sec,
-//   a 6GH/s asic will have this happen, on average, about once every 10 days
-//   a 30GH/s asic is unlikely to have this happen in the life of the universe
+//   a 6GH/s i32_asic will have this happen, on average, about once every 10 days
+//   a 30GH/s i32_asic is unlikely to have this happen in the life of the universe
 #define GHLIMsec 10
 
 // number of nonces that should give better than 80% accuracy
@@ -221,11 +215,11 @@ struct GEKKOHASH
 	// time of the last nonce in each second
 	struct timeval lastt[GHNUM];
 	// number of nonces in each second
-	int noncenum[GHNUM];
+	int t_i32_nb_nonces_ranges[GHNUM];
 	// sum of diff[0..last-1]
 	int64_t diffsum;
 	// number of nonces in 0..last-1
-	int noncesum;
+	int i32_nb_nonces;
 	// last used offset 0 based
 	int last;
 };
@@ -272,9 +266,9 @@ struct COMPAC_INFO {
 	enum sub_ident ident;		// Miner identity
 	enum miner_state mining_state;	// Miner state
 	enum miner_asic asic_type;	// ASIC Type
-	struct thr_info *thr;		// Running Thread
-	struct thr_info rthr;		// Listening Thread
-	struct thr_info wthr;		// Miner Work Thread
+	struct thr_info *p_running_thrd;		// Running Thread
+	struct thr_info listening_thrd;		// Listening Thread
+	struct thr_info work_thrd;		// Miner Work Thread
 
 	pthread_mutex_t lock;		// Mutex
 	pthread_mutex_t wlock;		// Mutex Serialize Writes
@@ -311,14 +305,14 @@ struct COMPAC_INFO {
 	float eff_wu;                // wu : expected wu
 	float tune_up;               // Increase frequency when eff_gs is above value
 	float tune_down;             // Decrease frequency when eff_gs is below value
-	float freq_fail;	     // last freq set failure on BM1397
-	float hr_scale;		     // scale adjustment for hashrate
+	float freq_fail;	     	 // last freq set failure on BM1397
+	float hr_scale;		     	 // scale adjustment for hashrate
 
 	float micro_temp;            // Micro Reported Temp
 	float wait_factor0;          // Base setting from opt value
 	float wait_factor;           // Used to compute max_task_wait
-	bool lock_freq;		     // When true disable all but safety,reset,shutdown and API freq changes
-	int usb_prop;		     // Number of usec to wait after certain usb commands
+	bool lock_freq;		     	 // When true disable all but safety,reset,shutdown and API freq changes
+	int usb_prop;		     	 // Number of usec to wait after certain usb commands
 
 	float fullscan_ms;           // Estimated time(ms) for full nonce range
 	float task_ms;               // Avg time(ms) between task sent to device
@@ -336,7 +330,7 @@ struct COMPAC_INFO {
 	int accepted;                // Nonces accepted
 	int dups;                    // Duplicates found (for plateau code)
 	int dupsall;                 // Duplicate nonce counter (total)
-	int dupsreset;		     // Duplicates since reset
+	int dupsreset;		     	 // Duplicates since reset
 	int tracker;                 // Track code execution path
 	int interface;               // USB interface
 	int init_count;              // USB interface initialization counter
@@ -349,7 +343,7 @@ struct COMPAC_INFO {
 	int vcore;                   // Core voltage
 	int micro_found;             // Found a micro to communicate with
 
-	bool can_boost;		     // true if boost is possible
+	bool can_boost;		     	 // true if boost is possible
 	bool vmask;                  // Current pool's vmask
 	bool boosted;                // Good nonce found for midstate2/3/4
 	bool report;
@@ -363,8 +357,8 @@ struct COMPAC_INFO {
 	uint32_t chips;              // Stores number of chips found
 	uint32_t cores;              // Stores number of core per chp
 	uint32_t difficulty;         // For computing hashrate
-	float nonce_expect;	     // For PT_NONONCE
-	float nonce_limit;	     // For PT_NONONCE
+	float nonce_expect;	     	 // For PT_NONONCE
+	float nonce_limit;	     	 // For PT_NONONCE
 	uint32_t expected_chips;     // Number of chips for device
 	uint64_t hashes;             // Hashes completed
 	uint64_t xhashes;            // Hashes completed / 0xffffffffull
@@ -376,7 +370,7 @@ struct COMPAC_INFO {
 	uint32_t max_job_id;         // JobId cap
 	uint64_t max_task_wait;      // Micro seconds to wait before next task is sent
 	uint32_t ramping;            // Ramping incrementer
-	uint32_t rx_len;             // rx length
+	uint32_t rx_len;             // tu8_rx_buffer length
 	uint32_t task_len;           // task length
 	uint32_t ticket_mask;        // Used to reduce flashes per second
 	uint32_t update_work;        // Notification of work update
@@ -388,7 +382,7 @@ struct COMPAC_INFO {
 	struct timeval last_dup_time;           // Last time nonce dup detected was attempted
 	struct timeval last_reset;              // Last time reset was triggered
 	struct timeval last_task;               // Last time work was sent
-	struct timeval last_nonce;              // Last time nonce was found
+	struct timeval s_tv_last_nonce;              // Last time nonce was found
 	struct timeval last_hwerror;            // Last time hw error was detected
 	struct timeval last_fast_forward;       // Last time of ramp jump to peak
 	struct timeval last_frequency_adjust;   // Last time of frequency adjust
@@ -411,23 +405,23 @@ struct COMPAC_INFO {
 
 	double last_work_diff;			// Diff of last work sent
 	struct timeval last_ticket_attempt;	// List attempt to set ticket
-	int ticket_number;			// offset in ticket array
-	int ticket_work;			// work sent since ticket set
+	int ticket_number;				// offset in ticket array
+	int ticket_work;				// work sent since ticket set
 	int64_t ticket_nonces;			// nonces since ticket set
 	int64_t below_nonces;			// nonces too low since ticket set
-	bool ticket_ok;				// ticket working ok
+	bool ticket_ok;					// ticket working ok
 	bool ticket_got_low;			// nonce found close to but >= diff
 	int ticket_failures;			// Must not exceed MAX_TICKET_CHECK
-	struct ASIC_INFO asics[255];
+	struct S_ASIC_INFO asics[255];
 	int64_t noncebyte[256];			// Count of nonces with the given byte[3] value
-	bool nb2c_setup;			// BM1397 true = nb2chip is setup (false = all 0)
+	bool nb2c_setup;				// BM1397 true = nb2chip is setup (false = all 0)
 	uint16_t nb2chip[256];			// BM1397 map nonce byte to: chip that produced it
 	bool active_work[JOB_MAX+1];            // Tag good and stale work
 	struct work *work[JOB_MAX+1];           // Work ring buffer
 
 	pthread_mutex_t ghlock;			// Mutex for all access to gh
 	struct GEKKOHASH gh;			// running hash rate buffer
-	float ghrequire;			// Ratio of expected HR required (GHREQUIRE) 0.0-0.8
+	float ghrequire;				// Ratio of expected HR required (GHREQUIRE) 0.0-0.8
 	pthread_mutex_t joblock;		// Mutex for all access to jb
 	struct GEKKOJOB job;			// running job rate buffer
 
@@ -444,23 +438,20 @@ struct COMPAC_INFO {
 	double fac1_5;
 	uint64_t inv;
 
-	double workgen;				// work timing overrun stats
+	double workgen;					// work timing overrun stats
 	int64_t over1num;
 	double over1amt;
 	int64_t over2num;
 	double over2amt;
 
-	struct timeval tune_limit;		// time between tune checks
+	struct timeval tune_limit;			// time between tune checks
 	struct timeval last_tune_up;		// time of last tune up attempt
 
 	unsigned char task[BUFFER_MAX];         // Task transmit buffer
 	unsigned char cmd[BUFFER_MAX];          // Command transmit buffer
-	unsigned char rx[BUFFER_MAX];           // Receive buffer
-	unsigned char tx[BUFFER_MAX];           // Transmit buffer
+	unsigned char tu8_rx_buffer[BUFFER_MAX];           // Receive buffer
+	unsigned char tu8_tx_buffer[BUFFER_MAX];           // Transmit buffer
 	unsigned char end[1024];                // buffer overrun test
 };
 
-void stuff_lsb(unsigned char *dst, uint32_t x);
-void stuff_msb(unsigned char *dst, uint32_t x);
-void stuff_reverse(unsigned char *dst, unsigned char *src, uint32_t len);
-uint64_t bound(uint64_t value, uint64_t lower_bound, uint64_t upper_bound);
+

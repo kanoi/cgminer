@@ -32,8 +32,9 @@ function cross_compile_build {
         rm -rf "$SOURCE_CODE_DIR/build_arm"
     fi
 
-    # Copy project code to chroot
-    sudo cp -r $SOURCE_CODE_DIR $CHROOT_PATH/tmp
+    sudo chroot $CHROOT_PATH /bin/bash -c "mkdir -p /tmp/$PROJECT/"
+    # mount project code to chroot
+    sudo mount -o bind $SOURCE_CODE_DIR $CHROOT_PATH/tmp/$PROJECT/
 
 
     # Build the project inside chroot
@@ -41,12 +42,10 @@ function cross_compile_build {
 
     # Copy the built project to the host machine
 
-    sudo cp -r $CHROOT_PATH/tmp/$PROJECT/build_arm $SOURCE_CODE_DIR/build_arm
-
-    sudo chown -R $USER:$USER $SOURCE_CODE_DIR/build_arm
+    sudo chown -R $USER:$USER $SOURCE_CODE_DIR
 
     # Clean up
-    sudo chroot $CHROOT_PATH /bin/bash -c "cd /tmp/ && rm -rf *"
+    sudo umount $SOURCE_CODE_DIR $CHROOT_PATH/tmp/$PROJECT/
 
     # Exit chroot
     sudo chroot $CHROOT_PATH /bin/bash -c "exit"

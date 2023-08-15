@@ -13,8 +13,6 @@
 #include "crc.h"
 #include "compat.h"
 #include <unistd.h>
-#include <gpiod.h>
-
 
 #ifdef __GNUC__
 #if __GNUC__ >= 7
@@ -22,23 +20,14 @@
 #endif
 #endif
 
-// usleep reliability
-#if defined(__APPLE__)
-#define USLEEPMIN 2000
-#define USLEEPPLUS 200
-#elif defined (WIN32)
-#define USLEEPMIN 250
-#define USLEEPPLUS 100
-#else
 #define USLEEPMIN 200
 #define USLEEPPLUS 50
-#endif
 
 static bool compac_prepare(struct thr_info *thr);
 static pthread_mutex_t static_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool last_widescreen;
 static uint8_t dev_init_count[0xffff] = {0};
-static uint8_t *init_count;
+static uint8_t *init_count; 
 static uint32_t stat_len;
 static uint32_t chip_max;
 
@@ -50,58 +39,109 @@ static uint32_t chip_max;
 // thus code in general ignores sleeping anything less than 200us
 #define TUNE_CODE 1
 
-static void gekko_usleep(struct COMPAC_INFO *info, int usec)
+// ignore nonces for this many work items after the ticket change
+#define TICKET_DELAY 8
+
+// allow this many nonces below the ticket value in case of work swap delays
+// N.B. if the chip mask is half the wanted value,
+//	roughly 85% of shares will be low since CDF 190% = 0.850
+// with the lowest i32_nonces_count of 150 below for diff 2,
+//  TICKET_BLOW_LIM 4 will always be exceeded if incorrectly set to diff 1
+#define TICKET_BELOW_LIM 4
+
+struct S_TICKET_INFO {
+	uint32_t u32_work_diff;		// work diff value
+	uint32_t u32_ticket_mask;	// ticket mask to ensure work diff
+	int32_t i32_nonces_count;	// CDF[Erl] nonces must have 1 below d_low_limit
+	double d_low_limit;			// must be a diff below this or ticket is too hi
+	double d_hi_limit;			// a diff below this means ticket is too low
+								//  set to .1 below diff to avoid any rounding
+	uint32_t u32_chips_x_cores_limit;	// chips x cores limit i.e. required to go above 16
+};
+
+// ticket restart checks allowed before forced to diff=1
+#define MAX_TICKET_CHECK 3
+
+// ticket values, diff descending. List values rather than calc them
+// end comments are how long at given task/sec (15 ~= 60 1diff nonce/sec = ~260GH/s)
+//  testing should take and chance of failure
+//   though it will retry MAX_TICKET_CHECK times so shouldn't give up in the
+//   exceedingly rare occasion where it fails once due to bad luck
+// limit to max diff of 16 unless the chips x cores is a bit better than a GSF/GSFM
+//  to ensure enough nonces are coming back to identify status changes/issues
+// the luck calculation is the chance all nonce diff values will be above d_low_limit
+//  after i32_nonces_count nonces i.e. after i32_nonces_count nonces there should be a nonce
+//  below d_low_limit, or the ticket mask is actually higher than it was set to
+//  the gsl function is cdf_gamma_Q(nonces, nonces, d_low_limit/diff)
+static struct S_TICKET_INFO s_ticket_info_bm1397[] =
+{
+	{ 64,	0xfc,  20000,	65.9,	63.9, 2600 }, // 90 59.3m Erlang=1.6x10-5 <- 64+ nonces
+	{ 32,	0xf8,  10000,	33.3,	31.9, 1300 }, // 45 29.6m Erlang=3.0x10-5 <- 32+ nonces
+	{ 16,	0xf0,	5000,	16.9,	15.9,	 0 }, // 15 22.2m Erlang=4.6x10-5 <- 16+ nonces
+	{  8,	0xe0,	1250,	 8.9,	 7.9,	 0 }, // 15  166s Erlang=6.0x10-5
+	{  4,	0xc0,	 450,	 4.9,	 3.9,	 0 }, // 15   30s Erlang=3.9x10-6
+	{  2,	0x80,	 150,	 2.9,	 1.9,	 0 }, // 15    5s Erlang=5.4x10-7
+	{  1,	0x00,	  50,	 1.9,	 0.0,	 0 }, // 15  0.8s Erlang=1.5x10-7 <- all nonces
+	{  0  }
+};
+
+#define THRESHOLD_US 1000000
+#define FACTOR_THRESHOLD1 1.5
+#define FACTOR_THRESHOLD2 1.1
+
+static void gekko_usleep(struct COMPAC_INFO *info, int sleep_duration_us)
 {
 #if TUNE_CODE
-	struct timeval stt, fin;
-	double td, fac;
+	struct timeval s_tv_start, s_tv_end;  	//start, end
+	double d_time_diff_us, d_fac_us; 		// time difference in us, factor in us
 #endif
 
-	// error for usleep()
-	if (usec >= 1000000)
+	// Handle case where usleep() would have an error
+	if (sleep_duration_us >= THRESHOLD_US)
 	{
-		cgsleep_ms(usec / 1000);
+		cgsleep_ms(sleep_duration_us / 1000); // Sleep in milliseconds
 #if TUNE_CODE
 		mutex_lock(&info->slock);
-		info->inv++;
+		info->inv++; // Increment inv
 		mutex_unlock(&info->slock);
 #endif
 		return;
 	}
 
 #if TUNE_CODE
-	cgtime(&stt);
+	cgtime(&s_tv_start); // Record start time
 #endif
-	usleep(usec);
+	usleep(sleep_duration_us); // Sleep for the specified duration
 #if TUNE_CODE
-	cgtime(&fin);
+	cgtime(&s_tv_end); // Record end time
 
-	td = us_tdiff(&fin, &stt);
-	fac = (td / (double)usec);
+	// Calculate time difference and factor
+	d_time_diff_us = us_tdiff(&s_tv_end, &s_tv_start);
+	d_fac_us = (d_time_diff_us / (double)sleep_duration_us);
 
+	// Update info structure
 	mutex_lock(&info->slock);
-	if (td < usec)
+	if (d_time_diff_us < sleep_duration_us) {
 		info->num0++;
-	if (fac >= 1.5)
+	}
+
+	if (d_fac_us >= FACTOR_THRESHOLD1)
 	{
-		info->req1_5 += usec;
-		info->fac1_5 += fac;
+		info->req1_5 += sleep_duration_us;
+		info->fac1_5 += d_fac_us;
 		info->num1_5++;
+	}
+	else if (d_fac_us >= FACTOR_THRESHOLD2)
+	{
+		info->req1_1 += sleep_duration_us;
+		info->fac1_1 += d_fac_us;
+		info->num1_1++;
 	}
 	else
 	{
-		if (fac >= 1.1)
-		{
-			info->req1_1 += usec;
-			info->fac1_1 += fac;
-			info->num1_1++;
-		}
-		else
-		{
-			info->req += usec;
-			info->fac += fac;
-			info->num++;
-		}
+		info->req += sleep_duration_us;
+		info->fac += d_fac_us;
+		info->num++;
 	}
 	mutex_unlock(&info->slock);
 #endif
@@ -116,15 +156,29 @@ static float freqbounding(float value, float lower_bound, float upper_bound)
 	return value;
 }
 
-uint32_t bmcrc(unsigned char *ptr, uint32_t len)
+
+/**
+ * @brief Calculate a 5-bit CRC value for the given input data.
+ *
+ * This function computes a 5-bit CRC value for the provided input data using
+ * a specific CRC algorithm. The algorithm processes the input data bit by bit,
+ * updates a CRC state array, and combines the values in the state array into a
+ * single 5-bit CRC value at the end.
+ *
+ * @param ptu8_input_data A pointer to the input data for which the CRC value is to be computed.
+ * @param u32_data_lenght The length of the input data in bits.
+ *
+ * @return A 5-bit CRC value calculated from the input data.
+ */
+uint32_t bmcrc(unsigned char *ptu8_input_data, uint32_t u32_data_lenght)
 {
 	unsigned char c[5] = {1, 1, 1, 1, 1};
 	uint32_t i, c1, ptr_idx = 0;
 
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < u32_data_lenght; i++) {
 		c1 = c[1];
 		c[1] = c[0];
-		c[0] = c[4] ^ ((ptr[ptr_idx] & (0x80 >> (i % 8))) ? 1 : 0);
+		c[0] = c[4] ^ ((ptu8_input_data[ptr_idx] & (0x80 >> (i % 8))) ? 1 : 0);
 		c[4] = c[3];
 		c[3] = c[2];
 		c[2] = c1 ^ c[0];
@@ -135,7 +189,7 @@ uint32_t bmcrc(unsigned char *ptr, uint32_t len)
 	return (c[4] * 0x10) | (c[3] * 0x08) | (c[2] * 0x04) | (c[1] * 0x02) | (c[0] * 0x01);
 }
 
-void dumpbuffer(struct cgpu_info *compac, int LOG_LEVEL, char *note, unsigned char *ptr, uint32_t len)
+void dumpbuffer(struct cgpu_info *bm1397, int LOG_LEVEL, char *note, unsigned char *ptr, uint32_t len)
 {
 	if (opt_log_output || LOG_LEVEL <= opt_log_level) {
 		char str[2048];
@@ -149,7 +203,7 @@ void dumpbuffer(struct cgpu_info *compac, int LOG_LEVEL, char *note, unsigned ch
 			if (i % 42 == 41) {
 				*pout = 0;
 				pout = str;
-				applog(LOG_LEVEL, "%i: %s %s: %s", compac->cgminer_id, compac->drv->name, note, str);
+				applog(LOG_LEVEL, "%i: %s %s: %s", bm1397->cgminer_id, bm1397->drv->name, note, str);
 			} else {
 				*pout++ = ':';
 			}
@@ -157,78 +211,14 @@ void dumpbuffer(struct cgpu_info *compac, int LOG_LEVEL, char *note, unsigned ch
 		*pout++ = hex[(*ptr>>4)&0xF];
 		*pout++ = hex[(*ptr)&0xF];
 		*pout = 0;
-		applog(LOG_LEVEL, "%d: %s %d - %s: %s", compac->cgminer_id, compac->drv->name, compac->device_id, note, str);
+		applog(LOG_LEVEL, "%d: %s %d - %s: %s", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, note, str);
 	}
-}
-
-static int compac_micro_send(struct cgpu_info *compac, uint8_t cmd, uint8_t channel, uint8_t value)
-{
-	struct COMPAC_INFO *info = compac->device_data;
-	int bytes = 1;
-	int read_bytes = 1;
-	int micro_temp;
-	uint8_t temp;
-	unsigned short usb_val;
-	__maybe_unused char null[255];
-
-	// synchronous : safe to run in the listen thread.
-	if (!info->micro_found) {
-		return 0;
-	}
-
-	// Baud Rate : 500,000
-
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF3; // low byte: bitmask - 1111 0011 - CB1(HI), CB0(HI)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
-	gekko_usleep(info, MS2US(2));
-	//usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, 0x06, (FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
-
-	info->cmd[0] = cmd | channel;
-	info->cmd[1] = value;
-
-	if (value != 0x00 || cmd == M2_SET_VCORE) {
-		bytes = 2;
-	}
-
-	usb_read_timeout(compac, (char *)info->rx, 255, &read_bytes, 1, C_GETRESULTS);
-
-	dumpbuffer(compac, LOG_INFO, "(micro) TX", info->cmd, bytes);
-	usb_write(compac, (char *)info->cmd, bytes, &read_bytes, C_REQUESTRESULTS);
-
-	memset(info->rx, 0, info->rx_len);
-	usb_read_timeout(compac, (char *)info->rx, 1, &read_bytes, 5, C_GETRESULTS);
-
-	if (read_bytes > 0) {
-		dumpbuffer(compac, LOG_INFO, "(micro) RX", info->rx, read_bytes);
-		switch (cmd) {
-			case 0x20:
-				temp = info->rx[0];
-				micro_temp = 32 + 1.8 * temp;
-				if (micro_temp != info->micro_temp) {
-					info->micro_temp = micro_temp;
-					applog(LOG_WARNING, "%d: %s %d - micro temp changed to %d°C / %.1f°F",
-						compac->cgminer_id, compac->drv->name, compac->device_id, temp, info->micro_temp);
-				}
-				break;
-			default:
-				break;
-		}
-	}
-
-	// Restore Baud Rate
-	//usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, (info->bauddiv + 1), (FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
-
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI), CB0(LO)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
-	gekko_usleep(info, MS2US(2));
-
-	return read_bytes;
 }
 
 #define compac_send(_c, _r, _b, _crc) compac_send2(_c, _r, _b, _crc, NULL)
-static void compac_send2(struct cgpu_info *compac, unsigned char *req_tx, uint32_t bytes, uint32_t crc_bits, __maybe_unused char *msg)
+static void compac_send2(struct cgpu_info *bm1397, unsigned char *req_tx, uint32_t bytes, uint32_t crc_bits, __maybe_unused char *msg)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	int read_bytes = 1;
 	unsigned int i, off = 0;
 
@@ -241,53 +231,30 @@ static void compac_send2(struct cgpu_info *compac, unsigned char *req_tx, uint32
 		off = 2;
 	}
 
-	for (i = 0; i < bytes; i++)
+	for (i = 0; i < bytes; i++) {
 		info->cmd[i+off] = req_tx[i];
+	}
 
 	bytes += off;
 
 	info->cmd[bytes-1] |= bmcrc(req_tx, crc_bits);
 
-#if 0
-	if (msg == NULL)
-		msg = "null";
-
-applog(LOG_ERR, "%s() %d: %s %d - Send len %3u (%s)", __func__,
-	compac->cgminer_id, compac->drv->name, compac->device_id, bytes, msg);
-applog(LOG_ERR, "%s()  [%02x %02x %02x %02x %02x %02x %02x %02x]", __func__,
-	info->cmd[0], info->cmd[1], info->cmd[2], info->cmd[3], info->cmd[4], info->cmd[5], info->cmd[6], info->cmd[7]);
-applog(LOG_ERR, "%s()  [%02x %02x %02x %02x %02x %02x %02x %02x]", __func__,
-	info->cmd[8], info->cmd[9], info->cmd[10], info->cmd[11], info->cmd[12], info->cmd[13], info->cmd[14], info->cmd[15]);
-#endif
-
 	int log_level = (bytes < info->task_len) ? LOG_INFO : LOG_INFO;
 
-	dumpbuffer(compac, log_level, "TX", info->cmd, bytes);
-	usb_write(compac, (char *)(info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
-
+	dumpbuffer(bm1397, log_level, "TX", info->cmd, bytes);
+	usb_write(bm1397, (char *)(info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
 	//let the usb frame propagate
-	if (info->asic_type == BM1397)
+	if (info->asic_type == BM1397) {
 		gekko_usleep(info, info->usb_prop);
-	else
+	} else {
 		gekko_usleep(info, MS2US(1));
+	}
 }
 
 static float limit_freq(struct COMPAC_INFO *info, float freq, bool zero)
 {
 	switch(info->ident)
 	{
-	 case IDENT_BSC:
-	 case IDENT_GSC:
-	 case IDENT_BSD:
-	 case IDENT_GSD:
-	 case IDENT_BSE:
-	 case IDENT_GSE:
-		freq = freqbounding(freq, info->freq_base, 500);
-		break;
-	 case IDENT_GSH:
-	 case IDENT_GSI:
-		freq = freqbounding(freq, 50, 900);
-		break;
 	 case IDENT_GSF:
 	 case IDENT_GSFM:
 		// allow 0 also if zero is true - coded obviously
@@ -304,42 +271,28 @@ static float limit_freq(struct COMPAC_INFO *info, float freq, bool zero)
 	return freq;
 }
 
-static void ping_freq(struct cgpu_info *compac, int asic)
+static void ping_freq(struct cgpu_info *bm1397, int i32_asic)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	bool ping = false;
 
 	if (info->asic_type == BM1397)
 	{
 		unsigned char pingall[] = {0x52, 0x05, 0x00, BM1397FREQ, 0x00};
-		compac_send2(compac, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
-		ping = true;
-	}
-	else if (info->asic_type == BM1387)
-	{
-		unsigned char buffer[] = {0x44, 0x05, 0x00, 0x0C, 0x00};  // PLL_PARAMETER
-		buffer[2] = (0x100 / info->chips) * asic;
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8);
-		ping = true;
-	}
-	else if (info->asic_type == BM1384)
-	{
-		unsigned char buffer[] = {0x04, 0x00, 0x04, 0x00};
-		buffer[1] = (0x100 / info->chips) * asic;
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
+		compac_send2(bm1397, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
 		ping = true;
 	}
 
 	if (ping)
 	{
 		cgtime(&info->last_frequency_ping);
-		cgtime(&(info->asics[asic].last_frequency_ping));
+		cgtime(&(info->asics[i32_asic].s_tv_last_frequency_ping));
 	}
 }
 
-static void gsf_calc_nb2c(struct cgpu_info *compac)
+static void gsf_calc_nb2c(struct cgpu_info *bm1397)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	int c, i, j;
 	double fac;
 
@@ -366,14 +319,14 @@ static void gsf_calc_nb2c(struct cgpu_info *compac)
 	}
 }
 
-static void gc_wipe(struct GEKKOCHIP *gc, struct timeval *now)
+static void gc_wipe(struct S_BM1397_CHIP *s_bm1397_chip, struct timeval *now)
 {
 	// clear out everything
-	gc->zerosec = now->tv_sec;
-	gc->offset = 0;
-	memset(gc->noncenum, 0, sizeof(gc->noncenum));
-	gc->noncesum = 0;
-	gc->last = 0;
+	s_bm1397_chip->time_t_zero_sec = now->tv_sec;
+	s_bm1397_chip->i32_offset = 0;
+	memset(s_bm1397_chip->t_i32_nb_nonces_ranges, 0, sizeof(s_bm1397_chip->t_i32_nb_nonces_ranges));
+	s_bm1397_chip->i32_nb_nonces = 0;
+	s_bm1397_chip->i32_last_used_offset = 0;
 }
 
 static void gc_wipe_all(struct COMPAC_INFO *info, struct timeval *now, bool locked)
@@ -384,52 +337,52 @@ static void gc_wipe_all(struct COMPAC_INFO *info, struct timeval *now, bool lock
 		mutex_lock(&info->ghlock);
 
 	for (i = 0; i < (int)(info->chips); i++)
-		gc_wipe(&(info->asics[i].gc), now);
+		gc_wipe(&(info->asics[i].s_bm1397_chip), now);
 
 	if (!locked)
 		mutex_unlock(&info->ghlock);
 }
 
-// update asic->gc offset as at 'now' and correct values
+// update i32_asic->s_bm1397_chip offset as at 'now' and correct values
 // info must be locked, wipe creates a new data set
-static void gc_offset(struct COMPAC_INFO *info, struct ASIC_INFO *asic, struct timeval *now, bool wipe, bool locked)
+static void gc_offset(struct COMPAC_INFO *info, struct S_ASIC_INFO *i32_asic, struct timeval *now, bool wipe, bool locked)
 {
-	struct GEKKOCHIP *gc = &(asic->gc);
+	struct S_BM1397_CHIP *s_bm1397_chip = &(i32_asic->s_bm1397_chip);
 	time_t delta;
 
 	if (!locked)
 		mutex_lock(&info->ghlock);
 
 	// wipe or delta != 0
-	if (wipe || !CHCMP(gc->zerosec, now->tv_sec))
+	if (wipe || !CHCMP(s_bm1397_chip->time_t_zero_sec, now->tv_sec))
 	{
 		// clear some/all delta data
 
-		delta = CHBASE(now->tv_sec) - CHBASE(gc->zerosec);
+		delta = CHBASE(now->tv_sec) - CHBASE(s_bm1397_chip->time_t_zero_sec);
 		// if time goes back, also reset everything
 		//  a forward jump of CHNUM will reset the whole buffer
 		if (wipe || delta < 0 || delta >= CHNUM)
-			gc_wipe(gc, now);
+			gc_wipe(s_bm1397_chip, now);
 		else
 		{
 			// delta is > 0, but usually always 1 unless,
-			//  due to asic failure, a 10 minutes had no nonces
+			//  due to i32_asic failure, a 10 minutes had no nonces
 			// however the loop will total 1 iteration each
 			//  10 minutes elapsed real time e.g. if not called
 			//  for 30 minutes, it will loop 3 times
 			// there is also a CHNUM-1 limit on that
 
-			gc->zerosec = now->tv_sec;
+			s_bm1397_chip->time_t_zero_sec = now->tv_sec;
 			// clear out the old values
 			do
 			{
-				gc->offset = CHOFF(gc->offset+1);
+				s_bm1397_chip->i32_offset = CHOFF(s_bm1397_chip->i32_offset+1);
 
-				gc->noncesum -= gc->noncenum[CHOFF(gc->offset)];
-				gc->noncenum[CHOFF(gc->offset)] = 0;
+				s_bm1397_chip->i32_nb_nonces -= s_bm1397_chip->t_i32_nb_nonces_ranges[CHOFF(s_bm1397_chip->i32_offset)];
+				s_bm1397_chip->t_i32_nb_nonces_ranges[CHOFF(s_bm1397_chip->i32_offset)] = 0;
 
-				if (gc->last < (CHNUM-1))
-					gc->last++;
+				if (s_bm1397_chip->i32_last_used_offset < (CHNUM-1))
+					s_bm1397_chip->i32_last_used_offset++;
 			}
 			while (--delta > 0);
 		}
@@ -437,15 +390,15 @@ static void gc_offset(struct COMPAC_INFO *info, struct ASIC_INFO *asic, struct t
 
 	// if there's been no nonces up to now, history must already be all zero
 	//  so just remove history
-	if (gc->noncesum == 0 && gc->last > 0)
-		gc->last = 0;
+	if (s_bm1397_chip->i32_nb_nonces == 0 && s_bm1397_chip->i32_last_used_offset > 0)
+		s_bm1397_chip->i32_last_used_offset = 0;
 
 	if (!locked)
 		mutex_unlock(&info->ghlock);
 }
 
 // update info->gh offset as at 'now' and correct values
-// info must be locked, wipe creates a new data set and also wipes all asic->gc
+// info must be locked, wipe creates a new data set and also wipes all i32_asic->s_bm1397_chip
 static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, bool locked)
 {
 	struct GEKKOHASH *gh = &(info->gh);
@@ -460,7 +413,7 @@ static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, 
 	{
 		gh->zerosec = now->tv_sec;
 		for (i = 0; i < (int)(info->chips); i++)
-			info->asics[i].gc.zerosec = now->tv_sec;
+			info->asics[i].s_bm1397_chip.time_t_zero_sec = now->tv_sec;
 	}
 	else
 	{
@@ -486,15 +439,15 @@ static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, 
 				memset(gh->firstt, 0, sizeof(gh->firstt));
 				memset(gh->firstd, 0, sizeof(gh->firstd));
 				memset(gh->lastt, 0, sizeof(gh->lastt));
-				memset(gh->noncenum, 0, sizeof(gh->noncenum));
+				memset(gh->t_i32_nb_nonces_ranges, 0, sizeof(gh->t_i32_nb_nonces_ranges));
 				gh->diffsum = 0;
-				gh->noncesum = 0;
+				gh->i32_nb_nonces = 0;
 				gh->last = 0;
 			}
 			else
 			{
 				// delta is > 0, but usually always 1 unless,
-				//  due to asic failure, a second had no nonces
+				//  due to i32_asic failure, a second had no nonces
 				// however the loop will total 1 iteration each
 				//  second elapsed real time e.g. if not called
 				//  for 3 seconds, it will loop 3 times
@@ -508,8 +461,8 @@ static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, 
 
 					gh->diffsum -= gh->diff[GHOFF(gh->offset)];
 					gh->diff[GHOFF(gh->offset)] = 0;
-					gh->noncesum -= gh->noncenum[GHOFF(gh->offset)];
-					gh->noncenum[GHOFF(gh->offset)] = 0;
+					gh->i32_nb_nonces -= gh->t_i32_nb_nonces_ranges[GHOFF(gh->offset)];
+					gh->t_i32_nb_nonces_ranges[GHOFF(gh->offset)] = 0;
 
 					gh->firstt[GHOFF(gh->offset)].tv_sec = 0;
 					gh->firstt[GHOFF(gh->offset)].tv_usec = 0;
@@ -527,7 +480,7 @@ static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, 
 
 	// if there's been no nonces up to now, history must already be all zero
 	//  so just remove history
-	if (gh->noncesum == 0 && gh->last > 0)
+	if (gh->i32_nb_nonces == 0 && gh->last > 0)
 		gh->last = 0;
 	// this also handles the issue of a nonce-less wipe with a high
 	//  now->tv_usec and if the first nonce comes in during the next second.
@@ -540,7 +493,7 @@ static void gh_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe, 
 
 // update info->gh with a new nonce as at 'now' (diff=info->difficulty)
 // info must be locked, wipe creates a new data set with the single nonce
-static void add_gekko_nonce(struct COMPAC_INFO *info, struct ASIC_INFO *asic, struct timeval *now)
+static void add_gekko_nonce(struct COMPAC_INFO *info, struct S_ASIC_INFO *i32_asic, struct timeval *now)
 {
 	struct GEKKOHASH *gh = &(info->gh);
 
@@ -559,16 +512,16 @@ static void add_gekko_nonce(struct COMPAC_INFO *info, struct ASIC_INFO *asic, st
 
 	gh->diff[gh->offset] += info->difficulty;
 	gh->diffsum += info->difficulty;
-	(gh->noncenum[gh->offset])++;
-	(gh->noncesum)++;
+	(gh->t_i32_nb_nonces_ranges[gh->offset])++;
+	(gh->i32_nb_nonces)++;
 
-	if (asic != NULL)
+	if (i32_asic != NULL)
 	{
-		struct GEKKOCHIP *gc = &(asic->gc);
+		struct S_BM1397_CHIP *s_bm1397_chip = &(i32_asic->s_bm1397_chip);
 
-		gc_offset(info, asic, now, false, true);
-		(gc->noncenum[gc->offset])++;
-		(gc->noncesum)++;
+		gc_offset(info, i32_asic, now, false, true);
+		(s_bm1397_chip->t_i32_nb_nonces_ranges[s_bm1397_chip->i32_offset])++;
+		(s_bm1397_chip->i32_nb_nonces)++;
 	}
 
 	mutex_unlock(&info->ghlock);
@@ -576,7 +529,7 @@ static void add_gekko_nonce(struct COMPAC_INFO *info, struct ASIC_INFO *asic, st
 
 // calculate MH/s hashrate, info must be locked
 // value is 0.0 if there's no useful data
-// caller check info->gh.last for history size used and info->gh.noncesum-1
+// caller check info->gh.last for history size used and info->gh.i32_nb_nonces-1
 //  for the amount of data used (i.e. accuracy of the hash rate)
 static double gekko_gh_hashrate(struct COMPAC_INFO *info, struct timeval *now, bool locked)
 {
@@ -592,11 +545,11 @@ static double gekko_gh_hashrate(struct COMPAC_INFO *info, struct timeval *now, b
 		mutex_lock(&info->ghlock);
 
 	// can't be calculated with only one nonce
-	if (gh->diffsum > 0 && gh->noncesum > 1)
+	if (gh->diffsum > 0 && gh->i32_nb_nonces > 1)
 	{
 		gh_offset(info, now, false, true);
 
-		if (gh->diffsum > 0 && gh->noncesum > 1)
+		if (gh->diffsum > 0 && gh->i32_nb_nonces > 1)
 		{
 			// offset of 'now'
 			zero = gh->offset;
@@ -702,7 +655,7 @@ static void job_offset(struct COMPAC_INFO *info, struct timeval *now, bool wipe,
 			else
 			{
 				// delta is > 0, but usually always 1 unless,
-				//  due to asic or pool failure, a minute had no jobs
+				//  due to i32_asic or pool failure, a minute had no jobs
 				// however the loop will total 1 iteration each
 				//  minute elapsed real time e.g. if not called
 				//  for 2 minutes, it will loop 2 times
@@ -817,58 +770,12 @@ static void add_gekko_job(struct COMPAC_INFO *info, struct timeval *now, bool wi
 	mutex_unlock(&info->joblock);
 }
 
-// ignore nonces for this many work items after the ticket change
-#define TICKET_DELAY 8
-
-// allow this many nonces below the ticket value in case of work swap delays
-// N.B. if the chip mask is half the wanted value,
-//	roughly 85% of shares will be low since CDF 190% = 0.850
-// with the lowest nonce_count of 150 below for diff 2,
-//  TICKET_BLOW_LIM 4 will always be exceeded if incorrectly set to diff 1
-#define TICKET_BELOW_LIM 4
-
-struct TICKET_INFO {
-	uint32_t diff;		// work diff value
-	uint32_t ticket_mask;	// ticket mask to ensure work diff
-	int nonce_count;	// CDF[Erl] nonces must have 1 below low_limit
-	double low_limit;	// must be a diff below this or ticket is too hi
-	double hi_limit;	// a diff below this means ticket is too low
-				//  set to .1 below diff to avoid any rounding
-	uint32_t cclimit;	// chips x cores limit i.e. required to go above 16
-};
-
-// ticket restart checks allowed before forced to diff=1
-#define MAX_TICKET_CHECK 3
-
-// ticket values, diff descending. List values rather than calc them
-// end comments are how long at given task/sec (15 ~= 60 1diff nonce/sec = ~260GH/s)
-//  testing should take and chance of failure
-//   though it will retry MAX_TICKET_CHECK times so shouldn't give up in the
-//   exceedingly rare occasion where it fails once due to bad luck
-// limit to max diff of 16 unless the chips x cores is a bit better than a GSF/GSFM
-//  to ensure enough nonces are coming back to identify status changes/issues
-// the luck calculation is the chance all nonce diff values will be above low_limit
-//  after nonce_count nonces i.e. after nonce_count nonces there should be a nonce
-//  below low_limit, or the ticket mask is actually higher than it was set to
-//  the gsl function is cdf_gamma_Q(nonces, nonces, low_limit/diff)
-static struct TICKET_INFO ticket_1397[] =
-{
-	{ 64,	0xfc,  20000,	65.9,	63.9, 2600 }, // 90 59.3m Erlang=1.6x10-5 <- 64+ nonces
-	{ 32,	0xf8,  10000,	33.3,	31.9, 1300 }, // 45 29.6m Erlang=3.0x10-5 <- 32+ nonces
-	{ 16,	0xf0,	5000,	16.9,	15.9,	 0 }, // 15 22.2m Erlang=4.6x10-5 <- 16+ nonces
-	{  8,	0xe0,	1250,	 8.9,	 7.9,	 0 }, // 15  166s Erlang=6.0x10-5
-	{  4,	0xc0,	 450,	 4.9,	 3.9,	 0 }, // 15   30s Erlang=3.9x10-6
-	{  2,	0x80,	 150,	 2.9,	 1.9,	 0 }, // 15    5s Erlang=5.4x10-7
-	{  1,	0x00,	  50,	 1.9,	 0.0,	 0 }, // 15  0.8s Erlang=1.5x10-7 <- all nonces
-	{  0  }
-};
-
 // force=true to allow setting it if it may not have taken before
 //  force also delays longer after sending the ticket mask
 // diff=0.0 mean set the highest valid
-static void set_ticket(struct cgpu_info *compac, float diff, bool force, bool locked)
+static void set_ticket(struct cgpu_info *bm1397, float diff, bool force, bool locked)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	struct timeval now;
 	bool got = false;
 	uint32_t udiff, new_diff = 0, new_mask = 0, cc;
@@ -887,18 +794,18 @@ static void set_ticket(struct cgpu_info *compac, float diff, bool force, bool lo
 	udiff = (uint32_t)floor(diff);
 	cc = info->chips * info->cores;
 
-	for (i = 0; ticket_1397[i].diff > 0; i++)
+	for (i = 0; s_ticket_info_bm1397[i].u32_work_diff > 0; i++)
 	{
-		if (udiff >= ticket_1397[i].diff && cc > ticket_1397[i].cclimit)
+		if (udiff >= s_ticket_info_bm1397[i].u32_work_diff && cc > s_ticket_info_bm1397[i].u32_chips_x_cores_limit)
 		{
 			// if ticket is already the same
-			if (!force && info->difficulty == ticket_1397[i].diff)
+			if (!force && info->difficulty == s_ticket_info_bm1397[i].u32_work_diff)
 				return;
 
 			if (!locked)
 				mutex_lock(&info->lock);
-			new_diff = info->difficulty = ticket_1397[i].diff;
-			new_mask = info->ticket_mask = ticket_1397[i].ticket_mask;
+			new_diff = info->difficulty = s_ticket_info_bm1397[i].u32_work_diff;
+			new_mask = info->ticket_mask = s_ticket_info_bm1397[i].u32_ticket_mask;
 			info->last_work_diff = diff;
 			cgtime(&info->last_ticket_attempt);
 			info->ticket_number = i;
@@ -922,17 +829,17 @@ static void set_ticket(struct cgpu_info *compac, float diff, bool force, bool lo
 	unsigned char ticket[] = {0x51, 0x09, 0x00, BM1397TICKET, 0x00, 0x00, 0x00, 0xC0, 0x00};
 	ticket[7] = info->ticket_mask;
 
-	compac_send2(compac, ticket, sizeof(ticket), 8 * sizeof(ticket) - 8, "ticket");
+	compac_send2(bm1397, ticket, sizeof(ticket), 8 * sizeof(ticket) - 8, "ticket");
 	if (!force)
 		gekko_usleep(info, MS2US(10));
 	else
 		gekko_usleep(info, MS2US(20));
 
 	applog(LOG_ERR, "%d: %s %d - set ticket to 0x%02x/%u work %u/%.1f",
-		compac->cgminer_id, compac->drv->name, compac->device_id,
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 		new_mask, new_diff, udiff, diff);
 
-	// wipe info->gh/asic->gc
+	// wipe info->gh/i32_asic->s_bm1397_chip
 	cgtime(&now);
 	gh_offset(info, &now, true, false);
 	job_offset(info, &now, true, false);
@@ -940,7 +847,7 @@ static void set_ticket(struct cgpu_info *compac, float diff, bool force, bool lo
 	info->frequency_computed = 0;
 }
 
-// expected nonces for GEKKOCHIP - MUST already be locked AND gc_offset()
+// expected nonces for S_BM1397_CHIP - MUST already be locked AND gc_offset()
 // full 50 mins + current offset in 10 mins - N.B. uses CLOCK_MONOTONIC
 // it will grow from 0% to ~100% between 50 & 60 mins if the chip
 //  is performing at 100% - random variance of course also applies
@@ -953,20 +860,20 @@ static double noncepercent(struct COMPAC_INFO *info, int chip, struct timeval *n
 
 	sec = CHTIME * (CHNUM-1) + (now->tv_sec % CHTIME) + ((double)now->tv_usec / 1000000.0);
 
-	hashpersec = info->asics[chip].frequency * info->cores * info->hr_scale * 1000000.0;
+	hashpersec = info->asics[chip].f_frequency * info->cores * info->hr_scale * 1000000.0;
 
 	noncepersec = (hashpersec / (double)0xffffffffull)
-			/ (double)(ticket_1397[info->ticket_number].diff);
+			/ (double)(s_ticket_info_bm1397[info->ticket_number].u32_work_diff);
 
 	nonceexpect = noncepersec * sec;
 
-	return 100.0 * (double)(info->asics[chip].gc.noncesum) / nonceexpect;
+	return 100.0 * (double)(info->asics[chip].s_bm1397_chip.i32_nb_nonces) / nonceexpect;
 }
 
 // GSF/GSFM any chip count
-static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
+static void calc_gsf_freq(struct cgpu_info *bm1397, float frequency, int chip)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	char chipn[8];
 	bool doall;
 
@@ -980,15 +887,16 @@ static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
 		if (chip < 0 || chip >= (int)(info->chips))
 		{
 			applog(LOG_ERR, "%d: %s %d - invalid set chip [%d] -> freq %.2fMHz",
-				compac->cgminer_id, compac->drv->name, compac->device_id, chip, frequency);
+				bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, chip, frequency);
 			return;
 		}
 		doall = false;
 	}
 
 	// if attempting the same frequency that previously failed ...
-	if (frequency != 0 && frequency == info->freq_fail)
+	if (frequency != 0 && frequency == info->freq_fail) {
 		return;
+	}
 
 	unsigned char prefreqall[] = {0x51, 0x09, 0x00, 0x70, 0x0F, 0x0F, 0x0F, 0x00, 0x00};
 	unsigned char prefreqch[] = {0x41, 0x09, 0x00, 0x70, 0x0F, 0x0F, 0x0F, 0x00, 0x00};
@@ -1070,22 +978,22 @@ static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
 	{
 		// i.e. -1 means no reply since last set
 		for (c = 0; c < info->chips; c++)
-			info->asics[c].frequency_reply = -1;
+			info->asics[c].f_frequency_reply = -1;
 
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(info, MS2US(10));
-			compac_send2(compac, prefreqall, sizeof(prefreqall), 8 * sizeof(prefreqall) - 8, "prefreq");
+			compac_send2(bm1397, prefreqall, sizeof(prefreqall), 8 * sizeof(prefreqall) - 8, "prefreq");
 		}
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(info, MS2US(10));
-			compac_send2(compac, freqbufall, sizeof(freqbufall), 8 * sizeof(freqbufall) - 8, "freq");
+			compac_send2(bm1397, freqbufall, sizeof(freqbufall), 8 * sizeof(freqbufall) - 8, "freq");
 		}
 
 		// the freq wanted, which 'should' be the same
 		for (c = 0; c < info->chips; c++)
-			info->asics[c].frequency = frequency;
+			info->asics[c].f_frequency = frequency;
 	}
 	else
 	{
@@ -1093,21 +1001,21 @@ static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
 		prefreqch[2] = freqbufch[2] = CHIPPY1397(info, chip);
 
 		// i.e. -1 means no reply since last set
-		info->asics[chip].frequency_reply = -1;
+		info->asics[chip].f_frequency_reply = -1;
 
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(info, MS2US(10));
-			compac_send2(compac, prefreqch, sizeof(prefreqch), 8 * sizeof(prefreqch) - 8, "prefreq");
+			compac_send2(bm1397, prefreqch, sizeof(prefreqch), 8 * sizeof(prefreqch) - 8, "prefreq");
 		}
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(info, MS2US(10));
-			compac_send2(compac, freqbufch, sizeof(freqbufch), 8 * sizeof(freqbufch) - 8, "freq");
+			compac_send2(bm1397, freqbufch, sizeof(freqbufch), 8 * sizeof(freqbufch) - 8, "freq");
 		}
 
 		// the freq wanted, which 'should' be the same
-		info->asics[chip].frequency = frequency;
+		info->asics[chip].f_frequency = frequency;
 	}
 
 	if (doall)
@@ -1122,18 +1030,18 @@ static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
 
 //	applog(LOG_INFO, "%d: %s %d - setting frequency to %.2fMHz (%.2f)" " (%.0f/%.0f/%.0f/%.0f)",
 	applog(LOG_ERR, "%d: %s %d - setting [%s] frequency to %.2fMHz (%.2f)" " (%.0f/%.0f/%.0f/%.0f)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, chipn, frequency, newf, fa, fb, fc1, fc2);
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, chipn, frequency, newf, fa, fb, fc1, fc2);
 
-	ping_freq(compac, 0);
+	ping_freq(bm1397, 0);
 }
 
-static void compac_send_chain_inactive(struct cgpu_info *compac)
+static void compac_send_chain_inactive(struct cgpu_info *bm1397)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	unsigned int i, j;
 
 	applog(LOG_INFO,"%d: %s %d - sending chain inactive for %d chip(s)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, info->chips);
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, info->chips);
 
 	if (info->asic_type == BM1397)
 	{
@@ -1141,7 +1049,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char chainin[5] = {0x53, 0x05, 0x00, 0x00, 0x00};
 		for (i = 0; i < 3; i++)
 		{
-			compac_send2(compac, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
+			compac_send2(bm1397, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
 			gekko_usleep(info, MS2US(100));
 		}
 
@@ -1149,7 +1057,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		for (i = 0; i < info->chips; i++)
 		{
 			chippy[2] = CHIPPY1397(info, i);
-			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
+			compac_send2(bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
 			gekko_usleep(info, MS2US(10));
 		}
 
@@ -1158,120 +1066,59 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char init3[] = {0x51, 0x09, 0x00, 0x20, 0x00, 0x00, 0x00, 0x01, 0x00};
 		unsigned char init4[] = {0x51, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x80, 0x74, 0x00};
 
-		compac_send2(compac, init1, sizeof(init1), 8 * sizeof(init1) - 8, "init1");
+		compac_send2(bm1397, init1, sizeof(init1), 8 * sizeof(init1) - 8, "init1");
 		gekko_usleep(info, MS2US(10));
-		compac_send2(compac, init2, sizeof(init2), 8 * sizeof(init2) - 8, "init2");
+		compac_send2(bm1397, init2, sizeof(init2), 8 * sizeof(init2) - 8, "init2");
 		gekko_usleep(info, MS2US(100));
-		compac_send2(compac, init3, sizeof(init3), 8 * sizeof(init3) - 8, "init3");
+		compac_send2(bm1397, init3, sizeof(init3), 8 * sizeof(init3) - 8, "init3");
 		gekko_usleep(info, MS2US(50));
-		compac_send2(compac, init4, sizeof(init4), 8 * sizeof(init4) - 8, "init4");
+		compac_send2(bm1397, init4, sizeof(init4), 8 * sizeof(init4) - 8, "init4");
 		gekko_usleep(info, MS2US(100));
 
 		// set ticket based on chips, pool will be above this anyway
-		set_ticket(compac, 0.0, true, false);
+		set_ticket(bm1397, 0.0, true, false);
 
 		unsigned char init5[] = {0x51, 0x09, 0x00, 0x68, 0xC0, 0x70, 0x01, 0x11, 0x00};
 		unsigned char init6[] = {0x51, 0x09, 0x00, 0x28, 0x06, 0x00, 0x00, 0x0F, 0x00};
 
 		for (j = 0; j < 2; j++)
 		{
-			compac_send2(compac, init5, sizeof(init5), 8 * sizeof(init5) - 8, "init5");
+			compac_send2(bm1397, init5, sizeof(init5), 8 * sizeof(init5) - 8, "init5");
 			gekko_usleep(info, MS2US(50));
 		}
-		compac_send2(compac, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
+		compac_send2(bm1397, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
 		gekko_usleep(info, MS2US(100));
 
 		unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x18, 0x00, 0x00, 0x61, 0x31, 0x00 }; // lo 1.51M
 		info->bauddiv = 1; // 1.5M
 
-#ifdef WIN32___fixme_zzz
-		if (info->midstates == 4)
-		{
-			// 4 mid = slow it down on windows 116K
-			baudrate[5] = 0x00;
-			baudrate[6] = 0x7A;
-			// 3.125M/27
-			info->bauddiv = 26;
-		}
-#endif
-
 		applog(LOG_ERR, "%d: %s %d - setting bauddiv : %02x %02x (ftdi/%d)",
-			compac->cgminer_id, compac->drv->name, compac->device_id, baudrate[5], baudrate[6], info->bauddiv + 1);
-		compac_send2(compac, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, baudrate[5], baudrate[6], info->bauddiv + 1);
+		compac_send2(bm1397, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
 		gekko_usleep(info, MS2US(10));
 
-		usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, info->bauddiv + 1,
+		usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, info->bauddiv + 1,
 				(FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
 		gekko_usleep(info, MS2US(10));
 
-		calc_gsf_freq(compac, info->frequency, -1);
+		calc_gsf_freq(bm1397, info->frequency, -1);
 
 		gekko_usleep(info, MS2US(20));
-	} else if (info->asic_type == BM1387) {
-		unsigned char buffer[5] = {0x55, 0x05, 0x00, 0x00, 0x00};
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8); // chain inactive
-		gekko_usleep(info, MS2US(5));
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8); // chain inactive
-		gekko_usleep(info, MS2US(5));
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8); // chain inactive
-		for (i = 0; i < info->chips; i++) {
-			buffer[0] = 0x41;
-			buffer[1] = 0x05;
-			buffer[2] = (0x100 / info->chips) * i;
-			gekko_usleep(info, MS2US(5));
-			compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8);
-		}
-
-		gekko_usleep(info, MS2US(10));
-		unsigned char baudrate[] = { 0x58, 0x09, 0x00, 0x1C, 0x00, 0x20, 0x07, 0x00, 0x19 };
-		if (opt_gekko_bauddiv) {
-			info->bauddiv = opt_gekko_bauddiv;
-		} else {
-			info->bauddiv = 0x01; // 1.5Mbps baud.
-#ifdef WIN32
-			if (info->midstates == 4)
-				info->bauddiv = 0x0D; // 214Kbps baud.
-#endif
-		}
-		applog(LOG_INFO, "%d: %s %d - setting bauddiv : %02x",
-			compac->cgminer_id, compac->drv->name, compac->device_id, info->bauddiv);
-		baudrate[6] = info->bauddiv;
-		compac_send(compac, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8);
-		gekko_usleep(info, MS2US(10));
-		usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, (info->bauddiv + 1),
-				(FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
-		gekko_usleep(info, MS2US(10));
-
-		unsigned char gateblk[9] = {0x58, 0x09, 0x00, 0x1C, 0x40, 0x20, 0x99, 0x80, 0x01};
-		gateblk[6] = 0x80 | info->bauddiv;
-		compac_send(compac, gateblk, sizeof(gateblk), 8 * sizeof(gateblk) - 8); // chain inactive
-	} else if (info->asic_type == BM1384) {
-		unsigned char buffer[] = {0x85, 0x00, 0x00, 0x00};
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5); // chain inactive
-		for (i = 0; i < info->chips; i++) {
-			buffer[0] = 0x01;
-			buffer[1] = (0x100 / info->chips) * i;
-			compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
-		}
-		buffer[0] = 0x86; // GATEBLK
-		buffer[1] = 0x00;
-		buffer[2] = 0x9a; // 0x80 | 0x1a;
-		//compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
 	}
 
 	if (info->mining_state == MINER_CHIP_COUNT_OK) {
 		applog(LOG_INFO, "%d: %s %d - open cores",
-			compac->cgminer_id, compac->drv->name, compac->device_id);
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 		info->zero_check = 0;
 		info->task_hcn = 0;
 		info->mining_state = MINER_OPEN_CORE;
 	}
 }
 
-static void compac_update_rates(struct cgpu_info *compac)
+static void compac_update_rates(struct cgpu_info *bm1397)
 {
-	struct COMPAC_INFO *info = compac->device_data;
-	struct ASIC_INFO *asic;
+	struct COMPAC_INFO *info = bm1397->device_data;
+	struct S_ASIC_INFO *i32_asic;
 	float average_frequency = 0, est;
 	unsigned int i;
 
@@ -1282,24 +1129,24 @@ static void compac_update_rates(struct cgpu_info *compac)
 
 	for (i = 0; i < info->chips; i++)
 	{
-		if (info->asics[i].frequency == 0)
+		if (info->asics[i].f_frequency == 0)
 			return;
 	}
 
 	info->frequency_asic = 0;
 	for (i = 0; i < info->chips; i++) {
-		asic = &info->asics[i];
-		asic->hashrate = asic->frequency * info->cores * 1000000 * info->hr_scale;
-		asic->fullscan_ms = 1000.0 * info->hr_scale * 0xffffffffull / asic->hashrate;
-		asic->fullscan_us = 1000.0 * info->hr_scale * 1000.0 * 0xffffffffull / asic->hashrate;
-		average_frequency += asic->frequency;
-		info->frequency_asic = (asic->frequency > info->frequency_asic ) ? asic->frequency : info->frequency_asic;
+		i32_asic = &info->asics[i];
+		i32_asic->u64_hashrate = i32_asic->f_frequency * info->cores * 1000000 * info->hr_scale;
+		i32_asic->f_fullscan_duration_ms = 1000.0 * info->hr_scale * 0xffffffffull / i32_asic->u64_hashrate;
+		i32_asic->u32_fullscan_duration = 1000.0 * info->hr_scale * 1000.0 * 0xffffffffull / i32_asic->u64_hashrate;
+		average_frequency += i32_asic->f_frequency;
+		info->frequency_asic = (i32_asic->f_frequency > info->frequency_asic ) ? i32_asic->f_frequency : info->frequency_asic;
 	}
 
 	average_frequency = average_frequency / info->chips;
 	if (average_frequency != info->frequency) {
 		applog(LOG_INFO,"%d: %s %d - frequency updated %.2fMHz -> %.2fMHz",
-			compac->cgminer_id, compac->drv->name, compac->device_id, info->frequency, average_frequency);
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, info->frequency, average_frequency);
 		info->frequency = average_frequency;
 		info->wu_max = 0;
 	}
@@ -1308,27 +1155,14 @@ static void compac_update_rates(struct cgpu_info *compac)
 	info->hashrate = info->chips * info->frequency * info->cores * 1000000 * info->hr_scale;
 	info->fullscan_ms = 1000.0 * info->hr_scale * 0xffffffffull / info->hashrate;
 	info->fullscan_us = 1000.0 * info->hr_scale * 1000.0 * 0xffffffffull / info->hashrate;
-	if (info->asic_type != BM1397)
-	{
-		info->ticket_mask = bound(pow(2, ceil(log(info->hashrate / (2.0 * 0xffffffffull)) / log(2))) - 1, 0, 4000);
-		info->ticket_mask = (info->asic_type == BM1387) ? 0 : info->ticket_mask;
-		info->difficulty = info->ticket_mask + 1;
-	}
 
 	info->wait_factor = info->wait_factor0;
-	if (!opt_gekko_noboost && info->vmask && (info->asic_type == BM1387 || info->asic_type == BM1397))
+	if (!opt_gekko_noboost && info->vmask && (info->asic_type == BM1397))
 		info->wait_factor *= info->midstates;
 	est = info->wait_factor * (float)(info->fullscan_us);
 	info->max_task_wait = bound((uint64_t)est, 1, 3 * info->fullscan_us);
 
-	if (info->asic_type == BM1387)
-	{
-		if (opt_gekko_tune_up > 95)
-			info->tune_up = 100.0 * ((info->frequency - info->freq_base * (600 / info->frequency)) / info->frequency);
-		else
-			info->tune_up = opt_gekko_tune_up;
-	}
-	else if (info->asic_type == BM1397)
+	if (info->asic_type == BM1397)
 	{
 		// 90% will always allow at least 2 freq steps
 		if (opt_gekko_tune_up > 90)
@@ -1358,140 +1192,29 @@ static void compac_update_rates(struct cgpu_info *compac)
 	}
 
 	applog(LOG_INFO, "%d: %s %d - Rates: ms %.2f tu %.2f td %.2f",
-		compac->cgminer_id, compac->drv->name, compac->device_id,
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 		info->fullscan_ms, info->tune_up, info->tune_down);
 }
 
-static void compac_set_frequency_single(struct cgpu_info *compac, float frequency, int asic_id)
+static void compac_set_frequency(struct cgpu_info *bm1397, float frequency)
 {
-	struct COMPAC_INFO *info = compac->device_data;
-	struct ASIC_INFO *asic = &info->asics[asic_id];
-	struct timeval now;
-
-	if (info->asic_type == BM1387) {
-		unsigned char buffer[] = {0x48, 0x09, 0x00, 0x0C, 0x00, 0x50, 0x02, 0x41, 0x00};   //250MHz -- osc of 25MHz
-		frequency = bound(frequency, 50, 1200);
-		frequency = FREQ_BASE(frequency);
-
-		if (frequency < 400) {
-			buffer[7] = 0x41;
-			buffer[5] = (frequency * 8) / info->freq_mult;
-		} else {
-			buffer[7] = 0x21;
-			buffer[5] = (frequency * 4) / info->freq_mult;
-		}
-		buffer[2] = (0x100 / info->chips) * asic_id;
-
-		//asic->frequency = frequency;
-		asic->frequency_set = frequency;
-		asic->frequency_attempt++;
-
-		applog(LOG_INFO, "%d: %s %d - setting chip[%d] frequency (%d) %.2fMHz -> %.2fMHz",
-			compac->cgminer_id, compac->drv->name, compac->device_id,
-			asic_id, asic->frequency_attempt, asic->frequency, frequency);
-
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8);
-
-		//unsigned char gateblk[9] = {0x48, 0x09, 0x00, 0x1C, 0x40, 0x20, 0x99, 0x80, 0x01};
-		//gateblk[6] = 0x80 | info->bauddiv;
-		//gateblk[2] = (0x100 / info->chips) * id;
-		//compac_send(compac, gateblk, sizeof(gateblk), 8 * sizeof(gateblk) - 8); // chain inactive
-
-		// wipe info->gh/asic->gc
-		cgtime(&now);
-		gh_offset(info, &now, true, false);
-		// reset P:
-		info->frequency_computed = 0;
-	}
-}
-
-static void compac_set_frequency(struct cgpu_info *compac, float frequency)
-{
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	uint32_t i, r, r1, r2, r3, p1, p2, pll;
 	struct timeval now;
 
-	if (info->asic_type == BM1397) {
-		calc_gsf_freq(compac, frequency, -1);
-	} else if (info->asic_type == BM1387) {
-		unsigned char buffer[] = {0x58, 0x09, 0x00, 0x0C, 0x00, 0x50, 0x02, 0x41, 0x00};   //250MHz -- osc of 25MHz
-		frequency = bound(frequency, 50, 1200);
-		frequency = FREQ_BASE(frequency);
+	calc_gsf_freq(bm1397, frequency, -1);
+	compac_update_rates(bm1397);
 
-		if (frequency < 400) {
-			buffer[7] = 0x41;
-			buffer[5] = (frequency * 8) / info->freq_mult;
-		} else {
-			buffer[7] = 0x21;
-			buffer[5] = (frequency * 4) / info->freq_mult;
-		}
-/*
-		} else {
-			buffer[7] = 0x11;
-			buffer[5] = (frequency * 2) / info->freq_mult;
-		}
-*/
-
-		applog(LOG_INFO, "%d: %s %d - setting frequency to %.2fMHz",
-			compac->cgminer_id, compac->drv->name, compac->device_id, frequency);
-
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8);
-
-		info->frequency = frequency;
-		for (i = 0; i < info->chips; i++)
-			info->asics[i].frequency = frequency;
-	} else if (info->asic_type == BM1384) {
-		unsigned char buffer[] = {0x82, 0x0b, 0x83, 0x00};
-
-		frequency = bound(frequency, 6, 500);
-		frequency = FREQ_BASE(frequency);
-
-		info->frequency = frequency;
-
-		r = floor(log(info->frequency/info->freq_mult) / log(2));
-
-		r1 = 0x0785 - r;
-		r2 = 0x200 / pow(2, r);
-		r3 = info->freq_mult * pow(2, r);
-
-		p1 = r1 + r2 * (info->frequency - r3) / info->freq_base;
-		p2 = p1 * 2 + (0x7f + r);
-
-		pll = (((uint32_t)(info->frequency) % (uint32_t)(info->freq_mult)) == 0 ? p1 : p2);
-
-		if (info->frequency < 100) {
-			pll = 0x0783 - 0x80 * (100 - info->frequency) / info->freq_base;
-		}
-
-		buffer[1] = (pll >> 8) & 0xff;
-		buffer[2] = (pll) & 0xff;
-
-		applog(LOG_INFO, "%d: %s %d - setting frequency to %.2fMHz",
-			compac->cgminer_id, compac->drv->name, compac->device_id, frequency);
-
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
-		buffer[0] = 0x84;
-		buffer[1] = 0x00;
-		buffer[2] = 0x00;
-//		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
-		buffer[2] = 0x04;
-		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
-
-		for (i = 0; i < info->chips; i++)
-			info->asics[i].frequency = frequency;
-	}
-	compac_update_rates(compac);
-
-	// wipe info->gh/asic->gc
+	// wipe info->gh/i32_asic->s_bm1397_chip
 	cgtime(&now);
 	gh_offset(info, &now, true, false);
 	// reset P:
 	info->frequency_computed = 0;
 }
 
-static void compac_update_work(struct cgpu_info *compac)
+static void compac_update_work(struct cgpu_info *bm1397)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	int i;
 
 	for (i = 0; i < JOB_MAX; i++) {
@@ -1500,112 +1223,64 @@ static void compac_update_work(struct cgpu_info *compac)
 	info->update_work = 1;
 }
 
-static void compac_flush_buffer(struct cgpu_info *compac)
+static void compac_flush_buffer(struct cgpu_info *bm1397)
 {
 	int read_bytes = 1;
 	unsigned char resp[32];
 
 	while (read_bytes) {
-		usb_read_timeout(compac, (char *)resp, 32, &read_bytes, 1, C_REQUESTRESULTS);
+		usb_read_timeout(bm1397, (char *)resp, 32, &read_bytes, 1, C_REQUESTRESULTS);
 	}
 }
 
-static void compac_flush_work(struct cgpu_info *compac)
+static void compac_flush_work(struct cgpu_info *bm1397)
 {
-	compac_flush_buffer(compac);
-	compac_update_work(compac);
+	compac_flush_buffer(bm1397);
+	compac_update_work(bm1397);
 }
 
-
-
-struct gpiod_chip *gpio_chip;
-struct gpiod_line *gpio_line;
-
-#define GPIO_CHIP_NAME "gpiochip1"
-#define GPIO_LINE_OFFSET 28
-
-int init_gpio()
-{
-    gpio_chip = gpiod_chip_open_by_name(GPIO_CHIP_NAME);
-    if (!gpio_chip)
-    {
-        perror("Failed to open GPIO chip");
-        return -1;
-    }
-    // Get the GPIO line
-    gpio_line = gpiod_chip_get_line(gpio_chip, GPIO_LINE_OFFSET);
-    if (!gpio_line)
-    {
-        perror("Failed to get GPIO line");
-        gpiod_chip_close(gpio_chip);
-        return -1;
-    }
-
-    // Request the GPIO line
-    int ret = gpiod_line_request_output(gpio_line, "gpio-reset", 0);
-    if (ret < 0)
-    {
-        perror("Failed to request GPIO line");
-        gpiod_line_release(gpio_line);
-        gpiod_chip_close(gpio_chip);
-        return -1;
-    }
-    return 0;
-
-}
-
-void toggle_gpio()
-{
-    // Toggle the GPIO line
-    gpiod_line_set_value(gpio_line, 0);
-    usleep(5000000); // Delay for 100 milliseconds
-    gpiod_line_set_value(gpio_line, 1);
-}
-static void compac_toggle_reset(struct cgpu_info *compac)
+static void compac_toggle_reset(struct cgpu_info *bm1397)
 {
 	
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	unsigned short usb_val;
 
 	applog(info->log_wide,"%d: %s %d - Toggling ASIC nRST to reset",
-		compac->cgminer_id, compac->drv->name, compac->device_id);
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 
 	// toggle gpio reset pin to reset ASIC
-
-
 	int fd;
 
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_RESET, info->interface, C_RESET);
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_DATA, FTDI_VALUE_DATA_BTS, info->interface, C_SETDATA);
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, FTDI_VALUE_BAUD_BTS, (FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_FLOW, FTDI_VALUE_FLOW, info->interface, C_SETFLOW);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_RESET, info->interface, C_RESET);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_DATA, FTDI_VALUE_DATA_BTS, info->interface, C_SETDATA);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, FTDI_VALUE_BAUD_BTS, (FTDI_INDEX_BAUD_BTS & 0xff00) | info->interface, C_SETBAUD);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_FLOW, FTDI_VALUE_FLOW, info->interface, C_SETFLOW);
 
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_TX, info->interface, C_PURGETX);
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_RX, info->interface, C_PURGERX);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_TX, info->interface, C_PURGETX);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_RX, info->interface, C_PURGERX);
 
 	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
 	gekko_usleep(info, MS2US(30));
 
 	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF0; // low byte: bitmask - 1111 0000 - CB1(LO)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
-	if (info->asic_type == BM1397)
-		gekko_usleep(info, MS2US(1000));
-	else
-		gekko_usleep(info, MS2US(30));
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	gekko_usleep(info, MS2US(1000));
 
 	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(compac, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
+	usb_transfer(bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, info->interface, C_SETMODEM);
 	gekko_usleep(info, MS2US(200));
 
 	cgtime(&info->last_reset);
 }
 
-static void compac_gsf_nonce(struct cgpu_info *compac, K_ITEM *item)
+
+//@MP : Specific to BM1397 chipe as the funct return if no this asic_type (gsf ?)
+static void compac_gsf_nonce(struct cgpu_info *bm1397, K_ITEM *item)
 {
-	struct COMPAC_INFO *info = compac->device_data;
-	unsigned char *rx = DATA_NONCE(item)->rx;
-	int hwe = compac->hw_errors;
+	struct COMPAC_INFO *info = bm1397->device_data;
+	unsigned char *tu8_rx_buffer = DATA_NONCE(item)->tu8_rx_buffer;
+	int hwe = bm1397->hw_errors;
 	struct work *work = NULL;
 	bool active_work = false;
 	uint32_t job_id = 0;
@@ -1615,57 +1290,47 @@ static void compac_gsf_nonce(struct cgpu_info *compac, K_ITEM *item)
 	bool boost, ok;
 	int asic_id, i;
 
-	if (info->asic_type != BM1397)
+	if (info->asic_type != BM1397) {
 		return;
+	}
 
-	job_id = rx[7] & 0xff;
-	nonce = (rx[5] << 0) | (rx[4] << 8) | (rx[3] << 16) | (rx[2] << 24);
+	job_id = tu8_rx_buffer[7] & 0xff;
+	nonce = (tu8_rx_buffer[5] << 0) | (tu8_rx_buffer[4] << 8) | (tu8_rx_buffer[3] << 16) | (tu8_rx_buffer[2] << 24);
 
 	// N.B. busy work (0xff) never returns a nonce
 
 	mutex_lock(&info->lock);
 	info->nonces++;
 	info->nonceless = 0;
-	info->noncebyte[rx[3]]++;
+	info->noncebyte[tu8_rx_buffer[3]]++;
 	mutex_unlock(&info->lock);
 
 	if (info->nb2c_setup)
-		asic_id = info->nb2chip[rx[3]];
+		asic_id = info->nb2chip[tu8_rx_buffer[3]];
 	else
-		asic_id = floor((double)(rx[4]) / ((double)0x100 / (double)(info->chips)));
+		asic_id = floor((double)(tu8_rx_buffer[4]) / ((double)0x100 / (double)(info->chips)));
 
 	if (asic_id >= (int)(info->chips))
         {
-		applog(LOG_ERR, "%d: %s %d - nonce %08x @ %02x rx[4] %02x invalid asic_id (0..%d)",
-			compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id,
-			rx[4], (int)(info->chips)-1);
+		applog(LOG_ERR, "%d: %s %d - nonce %08x @ %02x tu8_rx_buffer[4] %02x invalid asic_id (0..%d)",
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, nonce, job_id,
+			tu8_rx_buffer[4], (int)(info->chips)-1);
 		asic_id = (info->chips - 1);
         }
-#if 0
-else
-{
-		applog(LOG_ERR, "%d: %s %d - gotnonce %08x @ %02x rx[2] %02x id %d(%u)",
-			compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id,
-			rx[2], asic_id, info->chips);
-		applog(LOG_ERR, " N:[%02x %02x %02x %02x %02x %02x %02x]",
-			rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6]);
-}
-#endif
+	struct S_ASIC_INFO *i32_asic = &info->asics[asic_id];
 
-	struct ASIC_INFO *asic = &info->asics[asic_id];
-
-	if (nonce == asic->prev_nonce)
+	if (nonce == i32_asic->u32_last_found_nonce)
 	{
 		applog(LOG_INFO, "%d: %s %d - Duplicate Nonce : %08x @ %02x [%02x %02x %02x %02x %02x %02x %02x]",
-			compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id,
-			rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6]);
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, nonce, job_id,
+			tu8_rx_buffer[0], tu8_rx_buffer[1], tu8_rx_buffer[2], tu8_rx_buffer[3], tu8_rx_buffer[4], tu8_rx_buffer[5], tu8_rx_buffer[6]);
 
 		mutex_lock(&info->lock);
 		info->dups++;
 		info->dupsall++;
 		info->dupsreset++;
-		asic->dups++;
-		asic->dupsall++;
+		i32_asic->u32_duplicate_nonce_countr++;
+		i32_asic->u32_total_duplicate_nonce_counter++;
 		cgtime(&info->last_dup_time);
 		if (info->dups == 1)
 			info->mining_state = MINER_MINING_DUPS;
@@ -1676,10 +1341,10 @@ else
 
 	mutex_lock(&info->lock);
 	info->prev_nonce = nonce;
-	asic->prev_nonce = nonce;
+	i32_asic->u32_last_found_nonce = nonce;
 
 	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker);
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, nonce, job_id, info->tracker);
 
 	if (!opt_gekko_noboost && info->vmask)
 	{
@@ -1747,9 +1412,9 @@ else
 						ok = true;
 
 						applog(LOG_INFO, "%d: %s %d - Nonce Recovered : %08x @ job[%02x]->fix[%02x] len %u prelen %u",
-							compac->cgminer_id, compac->drv->name, compac->device_id,
-							nonce, job_id, w_job_id, (uint32_t)(DATA_NONCE(item)->len),
-							(uint32_t)(DATA_NONCE(item)->prelen));
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
+							nonce, job_id, w_job_id, (uint32_t)(DATA_NONCE(item)->sizet_len),
+							(uint32_t)(DATA_NONCE(item)->sizet_previous_len));
 					}
 				}
 			}
@@ -1758,10 +1423,10 @@ else
 		if (!ok)
 		{
 			applog(LOG_INFO, "%d: %s %d - Nonce Dumped : %08x @ job[%02x] cur[%02x] diff %u",
-				compac->cgminer_id, compac->drv->name, compac->device_id,
+				bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 				nonce, job_id, info->job_id, info->difficulty);
 
-			inc_hw_errors_n(info->thr, info->difficulty);
+			inc_hw_errors_n(info->p_running_thrd, info->difficulty);
 			cgtime(&info->last_hwerror);
 			mutex_unlock(&info->lock);
 			return;
@@ -1779,7 +1444,7 @@ else
 				info->ticket_nonces++;
 				// nonce below ticket setting - redo ticket - chip must be too low
 				// check this for all nonces until ticket_ok
-				if (diff < ticket_1397[i].hi_limit)
+				if (diff < s_ticket_info_bm1397[i].d_hi_limit)
 				{
 					if (++(info->below_nonces) < TICKET_BELOW_LIM)
 						break;
@@ -1791,28 +1456,28 @@ else
 						// give up - just set it to max
 
 						applog(LOG_ERR, "%d: %s %d - ticket %u failed too many times setting to max",
-							compac->cgminer_id, compac->drv->name, compac->device_id, ticket_1397[i].diff);
-						//set_ticket(compac, 1.0, true, true);
-						set_ticket(compac, 0.0, true, true);
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, s_ticket_info_bm1397[i].u32_work_diff);
+						//set_ticket(bm1397, 1.0, true, true);
+						set_ticket(bm1397, 0.0, true, true);
 						info->ticket_ok = true;
 						break;
 					}
 
 					applog(LOG_ERR, "%d: %s %d - ticket %u failure (%"PRId64") diff %.1f below lim %.1f - retry %d",
-						compac->cgminer_id, compac->drv->name, compac->device_id,
-						ticket_1397[i].diff, info->below_nonces, diff, ticket_1397[i].hi_limit, info->ticket_failures+1);
+						bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
+						s_ticket_info_bm1397[i].u32_work_diff, info->below_nonces, diff, s_ticket_info_bm1397[i].d_hi_limit, info->ticket_failures+1);
 
 					// try again ...
-					//set_ticket(compac, ticket_1397[i].diff, true, true);
-					set_ticket(compac, 0.0, true, true);
+					//set_ticket(bm1397, s_ticket_info_bm1397[i].diff, true, true);
+					set_ticket(bm1397, 0.0, true, true);
 					info->ticket_failures++;
 					break;
 				}
-				// after nonce_count, CDF[Erlang] chance of NOT being below
-				if (diff < ticket_1397[i].low_limit)
+				// after i32_nonces_count, CDF[Erlang] chance of NOT being below
+				if (diff < s_ticket_info_bm1397[i].d_low_limit)
 					info->ticket_got_low = true;
 
-				if (info->ticket_work >= (ticket_1397[i].nonce_count + TICKET_DELAY))
+				if (info->ticket_work >= (s_ticket_info_bm1397[i].i32_nonces_count + TICKET_DELAY))
 				{
 					// we should have got a 'low' by now
 					if (info->ticket_got_low)
@@ -1821,7 +1486,7 @@ else
 						info->ticket_failures = 0;
 
 						applog(LOG_ERR, "%d: %s %d - ticket value confirmed 0x%02x/%u after %"PRId64" nonces",
-							compac->cgminer_id, compac->drv->name, compac->device_id,
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 							info->ticket_mask, info->difficulty, info->ticket_nonces);
 						break;
 					}
@@ -1833,21 +1498,21 @@ else
 						// give up - just set it to 1.0
 
 						applog(LOG_ERR, "%d: %s %d - ticket %u failed too many times setting to max",
-							compac->cgminer_id, compac->drv->name, compac->device_id, ticket_1397[i].diff);
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, s_ticket_info_bm1397[i].u32_work_diff);
 
-						//set_ticket(compac, 1.0, true, true);
-						set_ticket(compac, 0.0, true, true);
+						//set_ticket(bm1397, 1.0, true, true);
+						set_ticket(bm1397, 0.0, true, true);
 						info->ticket_ok = true;
 						break;
 					}
 
 					applog(LOG_ERR, "%d: %s %d - ticket %u failure no low < %.1f after %d - retry %d",
-						compac->cgminer_id, compac->drv->name, compac->device_id,
-						ticket_1397[i].diff, ticket_1397[i].low_limit, info->ticket_work, info->ticket_failures+1);
+						bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
+						s_ticket_info_bm1397[i].u32_work_diff, s_ticket_info_bm1397[i].d_low_limit, info->ticket_work, info->ticket_failures+1);
 
 					// try again ...
-					//set_ticket(compac, ticket_1397[i].diff, true, true);
-					set_ticket(compac, 0.0, true, true);
+					//set_ticket(bm1397, s_ticket_info_bm1397[i].diff, true, true);
+					set_ticket(bm1397, 0.0, true, true);
 					info->ticket_failures++;
 					break;
 				}
@@ -1861,20 +1526,20 @@ else
 
 	mutex_unlock(&info->lock);
 
-	if (active_work && work && submit_nonce(info->thr, work, nonce))
+	if (active_work && work && submit_nonce(info->p_running_thrd, work, nonce))
 	{
 		mutex_lock(&info->lock);
 
-		cgtime(&info->last_nonce);
-		cgtime(&asic->last_nonce);
+		cgtime(&info->s_tv_last_nonce);
+		cgtime(&i32_asic->s_tv_last_nonce);
 
 		// count of valid nonces
-		asic->nonces++; // info only
+		i32_asic->i32_nonces++; // info only
 
 		if (midnum > 0)
 		{
 			applog(LOG_INFO, "%d: %s %d - AsicBoost nonce found : midstate %d",
-				compac->cgminer_id, compac->drv->name, compac->device_id, midnum);
+				bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, midnum);
 		}
 
 		// if work diff < info->dificulty, 'accept' hash rate will be low
@@ -1884,18 +1549,18 @@ else
 		info->accepted++;
 		info->failing = false;
 		info->dups = 0;
-		asic->dups = 0;
+		i32_asic->u32_duplicate_nonce_countr = 0;
 		mutex_unlock(&info->lock);
 
 		if (info->nb2c_setup)
-			add_gekko_nonce(info, asic, &(DATA_NONCE(item)->when));
+			add_gekko_nonce(info, i32_asic, &(DATA_NONCE(item)->s_tv_when));
 		else
-			add_gekko_nonce(info, NULL, &(DATA_NONCE(item)->when));
+			add_gekko_nonce(info, NULL, &(DATA_NONCE(item)->s_tv_when));
 	}
 	else
 	{
 		// shouldn't be possible since diff has already been checked
-		if (hwe != compac->hw_errors)
+		if (hwe != bm1397->hw_errors)
 		{
 			mutex_lock(&info->lock);
 			cgtime(&info->last_hwerror);
@@ -1904,157 +1569,11 @@ else
 	}
 }
 
-static uint64_t compac_check_nonce(struct cgpu_info *compac)
-{
-	struct COMPAC_INFO *info = compac->device_data;
-	uint32_t nonce = 0;
-	int hwe = compac->hw_errors;
-	uint32_t job_id = 0;
-	uint64_t hashes = 0;
-	struct timeval now;
-	int i;
-
-	if (info->asic_type == BM1387) {
-		job_id = info->rx[5] & 0xff;
-		nonce = (info->rx[3] << 0) | (info->rx[2] << 8) | (info->rx[1] << 16) | (info->rx[0] << 24);
-	} else if (info->asic_type == BM1384) {
-		job_id = info->rx[4] ^ 0x80;
-		nonce = (info->rx[3] << 0) | (info->rx[2] << 8) | (info->rx[1] << 16) | (info->rx[0] << 24);
-	} else if (info->asic_type == BM1397) {
-		// should never call here
-		return hashes;
-	}
-
-	if ((info->rx[0] == 0x72 && info->rx[1] == 0x03 && info->rx[2] == 0xEA && info->rx[3] == 0x83)
-	||  (info->rx[0] == 0xE1 && info->rx[1] == 0x6B && info->rx[2] == 0xF8 && info->rx[3] == 0x09))
-	{
-		//busy work nonces
-		return hashes;
-	}
-
-	if (job_id > info->max_job_id
-	||  (abs((int)(info->job_id) - (int)job_id) > 3 && abs((int)(info->max_job_id) - (int)job_id + (int)(info->job_id)) > 3))
-	{
-		return hashes;
-	}
-
-	if (!info->active_work[job_id]
-	&&  !(job_id > 0 && info->active_work[job_id - 1])
-	&&  !(job_id > 1 && info->active_work[job_id - 2])
-	&&  !(job_id > 2 && info->active_work[job_id - 3]))
-	{
-		return hashes;
-	}
-
-	cgtime(&now);
-
-	info->nonces++;
-	info->nonceless = 0;
-
-	int asic_id = (int)floor((double)(info->rx[0]) / ((double)0x100 / (double)(info->chips)));
-	struct ASIC_INFO *asic = &info->asics[asic_id];
-
-	if (nonce == asic->prev_nonce) {
-		applog(LOG_INFO, "%d: %s %d - Duplicate Nonce : %08x @ %02x [%02x %02x %02x %02x %02x %02x]",
-			compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id,
-			info->rx[0], info->rx[1], info->rx[2], info->rx[3], info->rx[4], info->rx[5]);
-
-		info->dups++;
-		info->dupsall++;
-		info->dupsreset++;
-		asic->dups++;
-		asic->dupsall++;
-		cgtime(&info->last_dup_time);
-		if (info->dups == 1) {
-			info->mining_state = MINER_MINING_DUPS;
-		}
-
-		return hashes;
-	}
-
-	info->prev_nonce = nonce;
-	asic->prev_nonce = nonce;
-
-	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker);
-
-	struct work *work = info->work[job_id];
-	bool active_work = info->active_work[job_id];
-	int midnum = 0;
-	if (!opt_gekko_noboost && info->vmask)
-	{
-		// force check last few nonces by [job_id - 1]
-		// doesn't handle job_id roll over
-		if (info->asic_type == BM1387)
-		{
-			for (i = 0; i < info->midstates; i++)
-			{
-				if ((int)job_id >= i)
-				{
-					if (info->active_work[job_id - i])
-					{
-						work = info->work[job_id - i];
-						active_work = info->active_work[job_id - i];
-						if (active_work && work)
-						{
-							work->micro_job_id = pow(2, i);
-							memcpy(work->data, &(work->pool->vmask_001[work->micro_job_id]), 4);
-							if (test_nonce(work, nonce))
-							{
-								midnum = i;
-								if (i > 0)
-									info->boosted = true;
-
-								break;
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	if (!active_work || !work) {
-		return hashes;
-	}
-
-	work->device_diff = info->difficulty;
-
-	if (submit_nonce(info->thr, work, nonce)) {
-		cgtime(&info->last_nonce);
-		cgtime(&asic->last_nonce);
-
-		// count of valid nonces
-		asic->nonces++; // info only
-
-		if (midnum > 0) {
-			applog(LOG_INFO, "%d: %s %d - AsicBoost nonce found : midstate%d",
-				compac->cgminer_id, compac->drv->name, compac->device_id, midnum);
-		}
-
-		hashes = info->difficulty * 0xffffffffull;
-		info->xhashes += info->difficulty;
-
-		info->accepted++;
-		info->failing = false;
-		info->dups = 0;
-		asic->dups = 0;
-
-		add_gekko_nonce(info, asic, &now);
-	} else {
-		if (hwe != compac->hw_errors) {
-			cgtime(&info->last_hwerror);
-		}
-	}
-
-	return hashes;
-}
-
 static void busy_work(struct COMPAC_INFO *info)
 {
 	memset(info->task, 0, info->task_len);
 
-	if (info->asic_type == BM1387 || info->asic_type == BM1397) {
+	if (info->asic_type == BM1397) {
 		info->task[0] = 0x21;
 		info->task[1] = info->task_len;
 		info->task[2] = info->job_id & 0xff;
@@ -2064,22 +1583,14 @@ static void busy_work(struct COMPAC_INFO *info)
 		unsigned short crc = crc16_false(info->task, info->task_len - 2);
 		info->task[info->task_len - 2] = (crc >> 8) & 0xff;
 		info->task[info->task_len - 1] = crc & 0xff;
-	} else if (info->asic_type == BM1384) {
-		if (info->mining_state == MINER_MINING) {
-			info->task[39] = info->ticket_mask & 0xff;
-			stuff_msb(info->task + 40, info->task_hcn);
-		}
-		info->task[51] = info->job_id & 0xff;
 	}
 }
 
 static void init_task(struct COMPAC_INFO *info)
 {
 	struct work *work = info->work[info->job_id];
-
 	memset(info->task, 0, info->task_len);
-
-	if (info->asic_type == BM1387 || info->asic_type == BM1397) {
+	if (info->asic_type == BM1397) {
 		info->task[0] = 0x21;
 		info->task[1] = info->task_len;
 		info->task[2] = info->job_id & 0xff;
@@ -2102,62 +1613,40 @@ static void init_task(struct COMPAC_INFO *info)
 		unsigned short crc = crc16_false(info->task, info->task_len - 2);
 		info->task[info->task_len - 2] = (crc >> 8) & 0xff;
 		info->task[info->task_len - 1] = crc & 0xff;
-	} else if (info->asic_type == BM1384) {
-		if (info->mining_state == MINER_MINING) {
-			stuff_reverse(info->task, work->midstate, 32);
-			stuff_reverse(info->task + 52, work->data + 64, 12);
-			info->task[39] = info->ticket_mask & 0xff;
-			stuff_msb(info->task + 40, info->task_hcn);
-		}
-		info->task[51] = info->job_id & 0xff;
 	}
 }
 
-static void change_freq_any(struct cgpu_info *compac, float new_freq)
+static void change_freq_any(struct cgpu_info *bm1397, float new_freq)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	unsigned int i;
 	float old_freq;
 
 	old_freq = info->frequency;
 	for (i = 0; i < info->chips; i++)
 	{
-		struct ASIC_INFO *asic = &info->asics[i];
+		struct S_ASIC_INFO *i32_asic = &info->asics[i];
 		cgtime(&info->last_frequency_adjust);
-		cgtime(&asic->last_frequency_adjust);
+		cgtime(&i32_asic->s_tv_last_frequency_adjust);
 		cgtime(&info->monitor_time);
-		asic->frequency_updated = 1;
+		i32_asic->b_frequency_updated = 1;
 		if (info->asic_type == BM1397)
 		{
 			if (i == 0)
-				compac_set_frequency(compac, new_freq);
-		}
-		else if (info->asic_type == BM1387)
-		{
-			compac_set_frequency_single(compac, new_freq, i);
-			info->frequency = new_freq;
-		}
-		else if (info->asic_type == BM1384)
-		{
-			if (i == 0)
-			{
-				compac_set_frequency(compac, new_freq);
-				compac_send_chain_inactive(compac);
-				info->frequency = new_freq;
-			}
+				compac_set_frequency(bm1397, new_freq);
 		}
 	}
 
 	applog(LOG_WARNING,"%d: %s %d - new frequency %.2fMHz -> %.2fMHz",
-		compac->cgminer_id, compac->drv->name, compac->device_id,
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 		old_freq, new_freq);
 }
 
 // compac_mine() with long term adjustments
 static void *compac_mine2(void *object)
 {
-	struct cgpu_info *compac = (struct cgpu_info *)object;
-	struct COMPAC_INFO *info = compac->device_data;
+	struct cgpu_info *bm1397 = (struct cgpu_info *)object;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	struct work *work = NULL;
 	struct work *old_work = NULL;
 
@@ -2183,16 +1672,10 @@ static void *compac_mine2(void *object)
 
 	int plateau_type = 0;
 
-#ifndef WIN32
 	ret_nice = nice(-15);
-#else /* WIN32 */
-	pthread_getschedparam(pthread_self(), &policy, &param);
-	param.sched_priority = sched_get_priority_max(policy);
-	pthread_setschedparam(pthread_self(), policy, &param);
-	ret_nice = param.sched_priority;
-#endif /* WIN32 */
+
 	applog(LOG_INFO, "%d: %s %d - work thread niceness (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, ret_nice);
+		bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, ret_nice);
 
 	sleep_us = 100;
 
@@ -2203,14 +1686,14 @@ static void *compac_mine2(void *object)
 		if (old_work)
 		{
 			mutex_lock(&info->lock);
-			work_completed(compac, old_work);
+			work_completed(bm1397, old_work);
 			mutex_unlock(&info->lock);
 			old_work = NULL;
 		}
 
 		if (info->chips == 0
-		||  compac->deven == DEV_DISABLED
-		||  compac->usbinfo.nodev
+		||  bm1397->deven == DEV_DISABLED
+		||  bm1397->usbinfo.nodev
 		||  (info->mining_state != MINER_MINING && info->mining_state != MINER_MINING_DUPS))
 		{
 			gekko_usleep(info, MS2US(10));
@@ -2246,8 +1729,8 @@ static void *compac_mine2(void *object)
 
 		sleep_us = bound(ceil(info->max_task_wait / 20), 1, 100 * 1000); // 1us .. 100ms
 
-		dev_runtime = cgpu_runtime(compac);
-		wu = compac->diff1 / dev_runtime * 60;
+		dev_runtime = cgpu_runtime(bm1397);
+		wu = bm1397->diff1 / dev_runtime * 60;
 
 		if (wu > info->wu_max)
 		{
@@ -2261,7 +1744,7 @@ static void *compac_mine2(void *object)
 			if (ms_tdiff(&now, &last_rolling) >= MS_SECOND_1)
 			{
 				mutex_lock(&info->ghlock);
-				if (info->gh.noncesum > (GHNONCENEEDED+1))
+				if (info->gh.i32_nb_nonces > (GHNONCENEEDED+1))
 				{
 					cgtime(&last_rolling);
 					info->rolling = gekko_gh_hashrate(info, &last_rolling, true);
@@ -2286,7 +1769,7 @@ static void *compac_mine2(void *object)
 				cgtime(&info->last_computed_increase);
 
 				applog(LOG_INFO, "%d: %s %d - new comp=%.2f (gs=%.2f)",
-					compac->cgminer_id, compac->drv->name, compac->device_id, frequency_computed,
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, frequency_computed,
 					((double)hashrate_gs)/1.0e6);
 			}
 
@@ -2297,7 +1780,7 @@ static void *compac_mine2(void *object)
 				has_freq = false;
 				for (i = 0; i < info->chips; i++)
 				{
-					if (info->asics[i].frequency != 0)
+					if (info->asics[i].f_frequency != 0)
 					{
 						has_freq = true;
 						break;
@@ -2307,57 +1790,30 @@ static void *compac_mine2(void *object)
 				cgtime(&last_plateau_check);
 				for (i = 0; i < info->chips; i++)
 				{
-					struct ASIC_INFO *asic = &info->asics[i];
+					struct S_ASIC_INFO *i32_asic = &info->asics[i];
 
 					// missing nonces
 					if (info->asic_type == BM1397)
 					{
 						if (has_freq && i == 0 && info->nonce_limit > 0.0
-						&&  ms_tdiff(&now, &info->last_nonce) > info->nonce_limit)
+						&&  ms_tdiff(&now, &info->s_tv_last_nonce) > info->nonce_limit)
 						{
 							plateau_type = PT_NONONCE;
 							applog(LOG_ERR, "%d: %s %d - plateau_type PT_NONONCE [%u] %d > %.2f (lock=%d)",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i,
-								ms_tdiff(&now, &info->last_nonce), info->nonce_limit, info->lock_freq);
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, i,
+								ms_tdiff(&now, &info->s_tv_last_nonce), info->nonce_limit, info->lock_freq);
 							if (info->lock_freq)
 								info->lock_freq = false;
-						}
-					}
-					else
-					{
-						if (has_freq && info->nonce_limit > 0.0
-						&&  ms_tdiff(&now, &asic->last_nonce) > info->nonce_limit)
-						{
-							plateau_type = PT_NONONCE;
-							applog(LOG_ERR, "%d: %s %d - plateau_type PT_NONONCE [%u] %d > %.2f (lock=%d)",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i,
-								ms_tdiff(&now, &asic->last_nonce), info->nonce_limit, info->lock_freq);
-							if (info->lock_freq)
-								info->lock_freq = false;
-						}
-					}
-
-					// asic check-in failed
-					if (!info->lock_freq
-					&&  info->asic_type != BM1397)
-					{
-						if (ms_tdiff(&asic->last_frequency_ping, &asic->last_frequency_reply) > MS_SECOND_30
-						&&  ms_tdiff(&now, &asic->last_frequency_reply) > MS_SECOND_30)
-						{
-							plateau_type = PT_FREQNR;
-							applog(LOG_INFO, "%d: %s %d - plateau_type PT_FREQNR [%u] %d > %d",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i,
-								ms_tdiff(&now, &asic->last_frequency_reply), MS_SECOND_30);
 						}
 					}
 
 					// set frequency requests not honored
 					if (!info->lock_freq
-					&&  asic->frequency_attempt > 3)
+					&&  i32_asic->u32_frequency_attempt > 3)
 					{
 						plateau_type = PT_FREQSET;
 						applog(LOG_INFO, "%d: %s %d - plateau_type PT_FREQSET [%u] %u > 3",
-							compac->cgminer_id, compac->drv->name, compac->device_id, i, asic->frequency_attempt);
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, i, i32_asic->u32_frequency_attempt);
 					}
 
 					if (plateau_type)
@@ -2374,12 +1830,12 @@ static void *compac_mine2(void *object)
 						memset(freq_chip_buf, 0, sizeof(freq_chip_buf));
 						for (j = 0; j < info->chips; j++)
 						{
-							struct ASIC_INFO *asjc = &info->asics[j];
-							sprintf(freq_chip_buf, "[%d:%.2f]", j, asjc->frequency);
+							struct S_ASIC_INFO *asjc = &info->asics[j];
+							sprintf(freq_chip_buf, "[%d:%.2f]", j, asjc->f_frequency);
 							strcat(freq_buf, freq_chip_buf);
 						}
 						applog(LOG_INFO,"%d: %s %d - %s",
-							compac->cgminer_id, compac->drv->name, compac->device_id, freq_buf);
+							bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, freq_buf);
 
 						if (info->plateau_reset < 3)
 						{
@@ -2387,8 +1843,8 @@ static void *compac_mine2(void *object)
 							if ((info->frequency - info->freq_base) > info->frequency_fail_high)
 								info->frequency_fail_high = (info->frequency - info->freq_base);
 
-							applog(LOG_WARNING,"%d: %s %d - asic plateau: [%u] (%d/3) %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id,
+							applog(LOG_WARNING,"%d: %s %d - i32_asic plateau: [%u] (%d/3) %.2fMHz",
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 								i, info->plateau_reset + 1, info->frequency_fail_high);
 						}
 
@@ -2403,28 +1859,28 @@ static void *compac_mine2(void *object)
 							new_frequency = limit_freq(info, FREQ_BASE(info->frequency_fail_high), true);
 						}
 						info->plateau_reset++;
-						asic->last_state = asic->state;
-						asic->state = ASIC_HALFDEAD;
-						cgtime(&asic->state_change_time);
+						i32_asic->e_asic_state_last = i32_asic->e_asic_state;
+						i32_asic->e_asic_state = ASIC_HALFDEAD;
+						cgtime(&i32_asic->s_tv_startup_time);
 						cgtime(&info->monitor_time);
 
 						switch (plateau_type)
 						{
 						 case PT_FREQNR:
 							applog(info->log_wide,"%d: %s %d - no frequency reply from chip[%u] - %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i, info->frequency);
-							asic->frequency_attempt = 0;
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, i, info->frequency);
+							i32_asic->u32_frequency_attempt = 0;
 							reason = " FREQNR";
 							break;
 						 case PT_FREQSET:
 							applog(info->log_wide,"%d: %s %d - frequency set fail to chip[%u] - %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i, info->frequency);
-							asic->frequency_attempt = 0;
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, i, info->frequency);
+							i32_asic->u32_frequency_attempt = 0;
 							reason = " FREQSET";
 							break;
 						 case PT_NONONCE:
 							applog(info->log_wide,"%d: %s %d - missing nonces from chip[%u] - %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id, i, info->frequency);
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, i, info->frequency);
 							reason = " NONONCE";
 							break;
 						 default:
@@ -2432,7 +1888,7 @@ static void *compac_mine2(void *object)
 							break;
 						}
 
-						if (plateau_type == PT_NONONCE || info->asic_type == BM1387 || info->asic_type == BM1397)
+						if (plateau_type == PT_NONONCE || info->asic_type == BM1397)
 						{
 							// BM1384 is less tolerant to sudden drops in frequency.
 							// Ignore other indicators except no nonce.
@@ -2447,7 +1903,7 @@ static void *compac_mine2(void *object)
 						{
 							info->frequency_requested = new_frequency;
 							applog(LOG_WARNING,"%d: %s %d - plateau%s [%u] adjust:%s target frequency %.2fMHz -> %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id,
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 								reason ? : "", i, doreset ? " RESET" : "", old_frequency, new_frequency);
 							didmsg = true;
 						}
@@ -2457,7 +1913,7 @@ static void *compac_mine2(void *object)
 							if (didmsg == false)
 							{
 								applog(LOG_WARNING,"%d: %s %d - plateau%s [%u] RESET at %.2fMHz",
-									compac->cgminer_id, compac->drv->name, compac->device_id,
+									bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 									reason ? : "", i, old_frequency);
 							}
 							info->mining_state = MINER_RESET;
@@ -2476,7 +1932,7 @@ static void *compac_mine2(void *object)
 				if ((plateau_type == 0)
 				&&  (ms_tdiff(&now, &last_movement) > MS_SECOND_1)
 				&&  (info->frequency < info->frequency_requested)
-				&&  (info->gh.noncesum > GHNONCENEEDED))
+				&&  (info->gh.i32_nb_nonces > GHNONCENEEDED))
 				{
 					float new_frequency = info->frequency + info->step_freq;
 
@@ -2484,7 +1940,7 @@ static void *compac_mine2(void *object)
 						new_frequency = info->frequency_requested;
 
 					frequency_updated = 1;
-					change_freq_any(compac, new_frequency);
+					change_freq_any(bm1397, new_frequency);
 					cgtime(&last_movement);
 				}
 			}
@@ -2494,7 +1950,7 @@ static void *compac_mine2(void *object)
 
 				// when we have enough nonces or gh is full
 				if (!info->lock_freq
-				&&  (info->gh.last == (GHNUM-1) || info->gh.noncesum > GHNONCES)
+				&&  (info->gh.last == (GHNUM-1) || info->gh.i32_nb_nonces > GHNONCES)
 				&&  (ms_tdiff(&now, &info->tune_limit) >= MS_MINUTE_2))
 				{
 					float new_freq, prev_freq;
@@ -2505,7 +1961,7 @@ static void *compac_mine2(void *object)
 
 					mutex_lock(&info->ghlock);
 					curr_hr = gekko_gh_hashrate(info, &now, true);
-					nonces = info->gh.noncesum;
+					nonces = info->gh.i32_nb_nonces;
 					last = info->gh.last;
 					mutex_unlock(&info->ghlock);
 
@@ -2525,13 +1981,13 @@ static void *compac_mine2(void *object)
 								info->frequency_start = new_freq;
 
 							applog(LOG_WARNING,"%d: %s %d - %.2fGH/s low [%.2f/%.2f/%d] reset limit %.2fMHz -> %.2fMHz",
-								compac->cgminer_id, compac->drv->name, compac->device_id,
+								bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 								curr_hr/1.0e3, hash_for_freq/1.0e3, hash_for_freq*info->ghrequire/1.0e3,
 								nonces, prev_freq, new_freq);
 
 							mutex_lock(&info->lock);
 							frequency_updated = 1;
-							change_freq_any(compac, info->frequency_start);
+							change_freq_any(bm1397, info->frequency_start);
 
 							// reset from start
 							info->mining_state = MINER_RESET;
@@ -2555,13 +2011,13 @@ static void *compac_mine2(void *object)
 									info->frequency_requested = new_freq;
 
 								applog(LOG_WARNING,"%d: %s %d - tune up attempt (%.1fGH/s) %.2fMHz -> %.2fMHz",
-									compac->cgminer_id, compac->drv->name, compac->device_id,
+									bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 									curr_hr/1.0e3, prev_freq, new_freq);
 
 								// will reset if it doesn't improve,
 								//  as soon as it has enough nonces
 								frequency_updated = 1;
-								change_freq_any(compac, new_freq);
+								change_freq_any(bm1397, new_freq);
 							}
 							cgtime(&info->last_tune_up);
 						}
@@ -2576,13 +2032,13 @@ static void *compac_mine2(void *object)
 				cgtime(&last_frequency_check);
 				for (i = 0; i < info->chips; i++)
 				{
-					struct ASIC_INFO *asic = &info->asics[i];
-					if (asic->frequency_updated)
+					struct S_ASIC_INFO *i32_asic = &info->asics[i];
+					if (i32_asic->b_frequency_updated)
 					{
-						asic->frequency_updated = 0;
+						i32_asic->b_frequency_updated = 0;
 						info->frequency_of = i;
 						if (info->asic_type != BM1397)
-							ping_freq(compac, i);
+							ping_freq(bm1397, i);
 						break;
 					}
 				}
@@ -2592,7 +2048,7 @@ static void *compac_mine2(void *object)
 		has_freq = false;
 		for (i = 0; i < info->chips; i++)
 		{
-			if (info->asics[i].frequency != 0)
+			if (info->asics[i].f_frequency != 0)
 			{
 				has_freq = true;
 				break;
@@ -2638,7 +2094,7 @@ static void *compac_mine2(void *object)
 		}
 
 		cgtime(&stt);
-		work = get_queued(compac);
+		work = get_queued(bm1397);
 
 		if (work)
 		{
@@ -2693,7 +2149,7 @@ static void *compac_mine2(void *object)
 			info->work[info->job_id] = work;
 			info->active_work[info->job_id] = 1;
 			info->vmask = work->pool->vmask;
-			if (info->asic_type == BM1387 || info->asic_type == BM1397)
+			if (info->asic_type == BM1397)
 			{
 				if (!opt_gekko_noboost && info->vmask)
 					info->task_len = 54 + 32 * (info->midstates - 1);
@@ -2710,7 +2166,7 @@ static void *compac_mine2(void *object)
 				cgtime(&info->last_pool_lost);
 
 			if (cp->stratum_active
-			&&  (info->asic_type == BM1387 || info->asic_type == BM1397))
+			&&  (info->asic_type == BM1397))
 			{
 				// get Dups instead of sending busy work
 
@@ -2726,13 +2182,10 @@ static void *compac_mine2(void *object)
 
 			cgtime(&info->monitor_time);
 			applog(LOG_INFO, "%d: %s %d - Busy",
-				compac->cgminer_id, compac->drv->name, compac->device_id);
+				bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 		}
 
 		int task_len = info->task_len;
-#if 0
-		unsigned char jid = info->task[2];
-#endif
 
 		if (info->asic_type == BM1397)
 		{ 
@@ -2745,27 +2198,13 @@ static void *compac_mine2(void *object)
 			info->task[1] = 0xaa;
 			task_len += 2;
 		}
-
-#if 0
-applog(LOG_ERR, "%s() %d: %s %d - Task [%02x] len %3u", __func__,
-	compac->cgminer_id, compac->drv->name, compac->device_id, jid, task_len);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	info->task[0], info->task[1], info->task[2], info->task[3], info->task[4], info->task[5], info->task[6], info->task[7]);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	info->task[8], info->task[9], info->task[10], info->task[11], info->task[12], info->task[13], info->task[14], info->task[15]);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	info->task[16], info->task[17], info->task[18], info->task[19], info->task[20], info->task[21], info->task[22], info->task[23]);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	info->task[24], info->task[25], info->task[26], info->task[27], info->task[28], info->task[29], info->task[30], info->task[31]);
-#endif
-
 		cgtime(&now); // set the time we actually sent it
 
-		err = usb_write(compac, (char *)info->task, task_len, &sent_bytes, C_SENDWORK);
-		//dumpbuffer(compac, LOG_WARNING, "TASK.TX", info->task, task_len);
+		err = usb_write(bm1397, (char *)info->task, task_len, &sent_bytes, C_SENDWORK);
+		dumpbuffer(bm1397, LOG_WARNING, "TASK.TX", info->task, task_len);
 		if (err != LIBUSB_SUCCESS)
 		{
-			applog(LOG_WARNING,"%d: %s %d - usb failure (%d)", compac->cgminer_id, compac->drv->name, compac->device_id, err);
+			applog(LOG_WARNING,"%d: %s %d - usb failure (%d)", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, err);
 			info->mining_state = MINER_RESET;
 			continue;
 		}
@@ -2773,7 +2212,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
 		{
 			if (ms_tdiff(&now, &info->last_write_error) > (5 * 1000)) {
 				applog(LOG_WARNING,"%d: %s %d - usb write error [%d:%d]",
-					compac->cgminer_id, compac->drv->name, compac->device_id, sent_bytes, task_len);
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id, sent_bytes, task_len);
 				cgtime(&info->last_write_error);
 			}
 			job_added = false;
@@ -2806,137 +2245,16 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
 		if (work && job_added
 		&&  ms_tdiff(&now, &info->last_update_rates) > MS_SECOND_5)
 		{
-			compac_update_rates(compac);
+			compac_update_rates(bm1397);
 		}
 	}
 	return NULL;
 }
-
-// not called by BM1397
-static void *compac_handle_rx(void *object, int read_bytes, int path)
-{
-	struct cgpu_info *compac = (struct cgpu_info *)object;
-	struct COMPAC_INFO *info = compac->device_data;
-	struct ASIC_INFO *asic;
-	int cmd_resp;
-	unsigned int i;
-	struct timeval now;
-
-	cgtime(&now);
-
-	cmd_resp = 0;
-	if (info->rx[read_bytes-1] <= 0x1f)
-	{
-		if (bmcrc(info->rx, 8 * read_bytes - 5) == info->rx[read_bytes-1])
-			cmd_resp = 1;
-	}
-
-	int log_level = (cmd_resp) ? LOG_INFO : LOG_INFO;
-	if (path) {
-		dumpbuffer(compac, log_level, "RX1", info->rx, read_bytes);
-	} else {
-		dumpbuffer(compac, log_level, "RX0", info->rx, read_bytes);
-	}
-
-	if (cmd_resp && info->rx[0] == 0x80 && info->frequency_of != (int)(info->chips)) {
-		float frequency = 0.0;
-		int frequency_of = info->frequency_of;
-		info->frequency_of = info->chips;
-		cgtime(&info->last_frequency_report);
-
-		if (info->asic_type == BM1387 && (info->rx[2] == 0 || (info->rx[3] >> 4) == 0 || (info->rx[3] & 0x0f) != 1 || (info->rx[4]) != 0 || (info->rx[5]) != 0)) {
-			cgtime(&info->last_frequency_invalid);
-			applog(LOG_INFO,"%d: %s %d - invalid frequency report", compac->cgminer_id, compac->drv->name, compac->device_id);
-		} else {
-			if (info->asic_type == BM1387) {
-				frequency = info->freq_mult * info->rx[1] / (info->rx[2] * (info->rx[3] >> 4) * (info->rx[3] & 0x0f));
-			} else if (info->asic_type == BM1384) {
-				frequency = (info->rx[1] + 1) * info->freq_base / ((1 + info->rx[2]) & 0x0f) * pow(2, (3 - info->rx[3])) + ((info->rx[2] >> 4) * info->freq_base);
-			}
-
-			if (frequency_of != (int)(info->chips)) {
-				asic = &info->asics[frequency_of];
-				cgtime(&asic->last_frequency_reply);
-				if (frequency != asic->frequency) {
-					bool syncd = 1;
-					if (frequency < asic->frequency && frequency != info->frequency_requested) {
-						applog(LOG_INFO,"%d: %s %d - chip[%d] reported frequency at %.2fMHz", compac->cgminer_id, compac->drv->name, compac->device_id, info->frequency_of, frequency);
-					} else {
-						applog(LOG_INFO,"%d: %s %d - chip[%d] reported new frequency of %.2fMHz", compac->cgminer_id, compac->drv->name, compac->device_id, info->frequency_of, frequency);
-					}
-					asic->frequency = frequency;
-					if (asic->frequency == asic->frequency_set) {
-						asic->frequency_attempt = 0;
-					}
-					for (i = 1; i < info->chips; i++) {
-						if (info->asics[i].frequency != info->asics[i - 1].frequency) {
-							syncd = 0;
-						}
-					}
-					if (info->frequency_syncd != syncd) {
-						info->frequency_syncd = syncd;
-						applog(LOG_INFO,"%d: %s %d - syncd [%d]", compac->cgminer_id, compac->drv->name, compac->device_id, syncd);
-					}
-				} else {
-					applog(LOG_INFO,"%d: %s %d - chip[%d] reported frequency of %.2fMHz", compac->cgminer_id, compac->drv->name, compac->device_id, info->frequency_of, frequency);
-				}
-			} else {
-				//applog(LOG_INFO,"%d: %s %d - [-1] reported frequency of %.2fMHz", compac->cgminer_id, compac->drv->name, compac->device_id, frequency);
-				//if (frequency != info->frequency) {
-				//	info->frequency = frequency;
-				//}
-			}
-			compac_update_rates(compac);
-		}
-	}
-
-	switch (info->mining_state) {
-		case MINER_CHIP_COUNT:
-		case MINER_CHIP_COUNT_XX:
-			if (cmd_resp && (info->rx[0] == 0x13 ||
-			    (info->rx[0] == 0xaa && info->rx[1] == 0x55 && info->rx[2] == 0x13))) { // BM1397
-				struct ASIC_INFO *asic = &info->asics[info->chips];
-				memset(asic, 0, sizeof(struct ASIC_INFO));
-				asic->frequency = info->frequency_default;
-				asic->frequency_attempt = 0;
-				asic->last_frequency_ping = (struct timeval){0};
-				asic->last_frequency_reply = (struct timeval){0};
-				cgtime(&asic->last_nonce);
-				info->chips++;
-				info->mining_state = MINER_CHIP_COUNT_XX;
-				compac_update_rates(compac);
-			}
-			break;
-		case MINER_OPEN_CORE:
-			if ((info->rx[0] == 0x72 && info->rx[1] == 0x03 && info->rx[2] == 0xEA && info->rx[3] == 0x83) ||
-				(info->rx[0] == 0xE1 && info->rx[1] == 0x6B && info->rx[2] == 0xF8 && info->rx[3] == 0x09)) {
-				//open core nonces = healthy chips.
-				info->zero_check++;
-			}
-			break;
-		case MINER_MINING:
-			if (!cmd_resp) {
-#ifdef __APPLE__
-				if (opt_mac_yield)
-					sched_yield();
-#else
-				selective_yield();
-#endif
-				mutex_lock(&info->lock);
-				info->hashes += compac_check_nonce(compac);
-				mutex_unlock(&info->lock);
-			}
-			break;
-		default:
-			break;
-	}
-	return NULL;
-}
-
+//Only for Bm1397
 static void *compac_gsf_nonce_que(void *object)
 {
-	struct cgpu_info *compac = (struct cgpu_info *)object;
-	struct COMPAC_INFO *info = compac->device_data;
+	struct cgpu_info *bm1397 = (struct cgpu_info *)object;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	struct timespec abstime, addtime;
 	K_ITEM *item;
 	int rc;
@@ -2955,7 +2273,7 @@ static void *compac_gsf_nonce_que(void *object)
 
 		if (item)
 		{
-			compac_gsf_nonce(compac, item);
+			compac_gsf_nonce(bm1397, item);
 			K_WLOCK(info->nlist);
 			k_add_head(info->nlist, item);
 			K_WUNLOCK(info->nlist);
@@ -2976,29 +2294,29 @@ static void *compac_gsf_nonce_que(void *object)
 	return NULL;
 }
 
-static bool gsf_reply(struct COMPAC_INFO *info, unsigned char *rx, int len, struct timeval *now)
+static bool gsf_reply(struct COMPAC_INFO *info, unsigned char *tu8_rx_buffer, int len, struct timeval *now)
 {
 	unsigned char fa, fb, fc1, fc2;
 	bool used = false;
 
-	if (len == (int)(info->rx_len) && rx[7] == BM1397FREQ)
+	if (len == (int)(info->rx_len) && tu8_rx_buffer[7] == BM1397FREQ)
 	{
-		int chip = TOCHIPPY1397(info, rx[6]);
+		int chip = TOCHIPPY1397(info, tu8_rx_buffer[6]);
 		if (chip >= 0 && chip < (int)(info->chips))
 		{
-			struct ASIC_INFO *asic = &info->asics[chip];
+			struct S_ASIC_INFO *i32_asic = &info->asics[chip];
 
-			fa = rx[3];
-			fb = rx[4];
-			fc1 = (rx[5] & 0xf0) >> 4;
-			fc2 = rx[5] & 0x0f;
+			fa = tu8_rx_buffer[3];
+			fb = tu8_rx_buffer[4];
+			fc1 = (tu8_rx_buffer[5] & 0xf0) >> 4;
+			fc2 = tu8_rx_buffer[5] & 0x0f;
 
 			// only allow a valid reply
 			if (fa >= 0 && fb > 0 && fc1 > 0 && fc2 > 0)
 			{
-				asic->frequency_reply = info->freq_mult * fa / fb / fc1 / fc2;
-				asic->last_frequency_reply.tv_sec = now->tv_sec;
-				asic->last_frequency_reply.tv_usec = now->tv_usec;
+				i32_asic->f_frequency_reply = info->freq_mult * fa / fb / fc1 / fc2;
+				i32_asic->s_tv_last_frequency_reply.tv_sec = now->tv_sec;
+				i32_asic->s_tv_last_frequency_reply.tv_usec = now->tv_usec;
 				used = true;
 			}
 		}
@@ -3007,15 +2325,15 @@ static bool gsf_reply(struct COMPAC_INFO *info, unsigned char *rx, int len, stru
 	return used;
 }
 
-static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
+static void *compac_listen2(struct cgpu_info *bm1397, struct COMPAC_INFO *info)
 {
-	unsigned char rx[BUFFER_MAX];
+	unsigned char tu8_rx_buffer[BUFFER_MAX];
 	struct timeval now;
 	int read_bytes, tmo, pos = 0, len, i, prelen;
 	bool okcrc, used, chipped;
 	K_ITEM *item;
 
-	memset(rx, 0, sizeof(rx));
+	memset(tu8_rx_buffer, 0, sizeof(tu8_rx_buffer));
 
 	while (info->mining_state != MINER_SHUTDOWN)
 	{
@@ -3024,13 +2342,13 @@ static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		if (info->mining_state == MINER_CHIP_COUNT)
 		{
 			unsigned char chippy[] = {0x52, 0x05, 0x00, 0x00, 0x0A};
-			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "CHIPPY");
+			compac_send2(bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "CHIPPY");
 			info->mining_state = MINER_CHIP_COUNT_XX;
 			// initial config reply allow much longer
 			tmo = 1000;
 		}
 
-		usb_read_timeout(compac, ((char *)rx)+pos, BUFFER_MAX-pos, &read_bytes, tmo, C_GETRESULTS);
+		usb_read_timeout(bm1397, ((char *)tu8_rx_buffer)+pos, BUFFER_MAX-pos, &read_bytes, tmo, C_GETRESULTS);
 		pos += read_bytes;
 
 		cgtime(&now);
@@ -3038,43 +2356,26 @@ static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		// all replies should be info->rx_len
 		while (read_bytes > 0 && pos >= (int)(info->rx_len))
 		{
-#if 0
-applog(LOG_ERR, "%d: %s %d - READ %3d pos %3d state %2d first 16: [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	compac->cgminer_id, compac->drv->name, compac->device_id, read_bytes, pos, info->mining_state,
-	rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6], rx[7]);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x]",
-	rx[8], rx[9], rx[10], rx[11], rx[12], rx[13], rx[14], rx[15]);
-#endif
-
 			// rubbish - skip over it to next 0xaa
-			if (rx[0] != 0xaa || rx[1] != 0x55)
+			if (tu8_rx_buffer[0] != 0xaa || tu8_rx_buffer[1] != 0x55)
 			{
 				for (i = 1; i < pos; i++)
 				{
-					if (rx[i] == 0xaa)
+					if (tu8_rx_buffer[i] == 0xaa)
 					{
 						// next read could be 0x55 or i+1=0x55
-						if (i == (pos - 1) || rx[i+1] == 0x55)
+						if (i == (pos - 1) || tu8_rx_buffer[i+1] == 0x55)
 							break;
 					}
 				}
 				// no 0xaa dump it and wait for more data
 				if (i >= pos)
 				{
-#if 0
-applog(LOG_ERR, " %s %d no 0xaa = dump all (%d) [%02x %02x %02x %02x ...]",
-	compac->drv->name, compac->device_id, pos, rx[0], rx[1], rx[2], rx[3]);
-#endif
 					pos = 0;
 					continue;
 				}
-#if 0
-applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
-	compac->drv->name, compac->device_id, i, rx[0], rx[1], rx[2], rx[3]);
-#endif
-
 				// i=0xaa dump up to i-1
-				memmove(rx, rx+i, pos-i);
+				memmove(tu8_rx_buffer, tu8_rx_buffer+i, pos-i);
 				pos -= i;
 
 				if (pos < (int)(info->rx_len))
@@ -3084,35 +2385,22 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 			// find next 0xaa 0x55
 			for (len = info->rx_len; len < pos; len++)
 			{
-				if (rx[len] == 0xaa
-				&&  (len == (pos-1) || rx[len+1] == 0x55))
+				if (tu8_rx_buffer[len] == 0xaa
+				&&  (len == (pos-1) || tu8_rx_buffer[len+1] == 0x55))
 					break;
 			}
 
 			prelen = len;
 			// a reply followed by only 0xaa but no 0x55 yet
-			if (len == pos && (len == 8 || len == 10) && rx[pos-1] == 0xaa)
+			if (len == pos && (len == 8 || len == 10) && tu8_rx_buffer[pos-1] == 0xaa)
 				len--;
 
 			// try it as a nonce
 			if (len != (int)(info->rx_len))
 				len = info->rx_len;
 
-#if 0
-			if (info->asic_type == BM1397 &&
-			    bmcrc(&rx[i+2], 8 * (info->rx_len-2) - 5) == (rx[i + info->rx_len - 1] & 0x1f)) {
-				// crc checksum is good
-				crc_match = true;
-				rx_okay = true;
-			}
-			if (info->asic_type == BM1397 && rx[0] >= 0xaa && rx[1] <= 0x55) {
-				// bm1397 response
-				rx_okay = true;
-			}
-#endif
-
-			if (rx[len-1] <= 0x1f
-			&&  bmcrc(rx+2, 8 * (len-2) - 5) == rx[len-1])
+			if (tu8_rx_buffer[len-1] <= 0x1f
+			&&  bmcrc(tu8_rx_buffer+2, 8 * (len-2) - 5) == tu8_rx_buffer[len-1])
 				okcrc = true;
 			else
 				okcrc = false;
@@ -3123,19 +2411,19 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 			 case MINER_CHIP_COUNT_XX:
 				// BM1397
 				chipped = false;
-				if (rx[2] == 0x13 && rx[3] == 0x97)
+				if (tu8_rx_buffer[2] == 0x13 && tu8_rx_buffer[3] == 0x97)
 				{
-					struct ASIC_INFO *asic = &info->asics[info->chips];
-					memset(asic, 0, sizeof(struct ASIC_INFO));
-					asic->frequency = info->frequency_default;
-					asic->frequency_attempt = 0;
-					asic->last_frequency_ping = (struct timeval){0};
-					asic->frequency_reply = -1;
-					asic->last_frequency_reply = (struct timeval){0};
-					cgtime(&asic->last_nonce);
+					struct S_ASIC_INFO *i32_asic = &info->asics[info->chips];
+					memset(i32_asic, 0, sizeof(struct S_ASIC_INFO));
+					i32_asic->f_frequency = info->frequency_default;
+					i32_asic->u32_frequency_attempt = 0;
+					i32_asic->s_tv_last_frequency_ping = (struct timeval){0};
+					i32_asic->f_frequency_reply = -1;
+					i32_asic->s_tv_last_frequency_reply = (struct timeval){0};
+					cgtime(&i32_asic->s_tv_last_nonce);
 					info->chips++;
 					info->mining_state = MINER_CHIP_COUNT_XX;
-					compac_update_rates(compac);
+					compac_update_rates(bm1397);
 					chipped = true;
 				}
 				// ignore all data until we get at least 1 chip reply
@@ -3152,7 +2440,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 
 						// don't discard the data
 						if (len == (int)(info->rx_len) && okcrc)
-							gsf_reply(info, rx, info->rx_len, &now);
+							gsf_reply(info, tu8_rx_buffer, info->rx_len, &now);
 					}
 					else
 						info->mining_state = MINER_RESET;
@@ -3162,16 +2450,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 				used = false;
 				if (len == (int)(info->rx_len) && okcrc)
 				{
-					used = gsf_reply(info, rx, info->rx_len, &now);
-#if 0
-if (!used)
-{
-applog(LOG_ERR, "%d: %s %d - ? len %3d state %2d first 12:",
-	compac->cgminer_id, compac->drv->name, compac->device_id, len, info->mining_state);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]",
-	rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6], rx[7], rx[8], rx[9], rx[10], rx[11]);
-}
-#endif
+					used = gsf_reply(info, tu8_rx_buffer, info->rx_len, &now);
 				}
 
 				// also try unidentifed crc's as a nonce
@@ -3180,15 +2459,15 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 					K_WLOCK(info->nlist);
 					item = k_unlink_head(info->nlist);
 					K_WUNLOCK(info->nlist);
-					DATA_NONCE(item)->asic = 0;
+					DATA_NONCE(item)->i32_asic = 0;
 					// should never be true ...
-					if (len > (int)sizeof(DATA_NONCE(item)->rx))
-						len = (int)sizeof(DATA_NONCE(item)->rx);
-					memcpy(DATA_NONCE(item)->rx, rx, len);
-					DATA_NONCE(item)->len = len;
-					DATA_NONCE(item)->prelen = prelen;
-					DATA_NONCE(item)->when.tv_sec = now.tv_sec;
-					DATA_NONCE(item)->when.tv_usec = now.tv_usec;
+					if (len > (int)sizeof(DATA_NONCE(item)->tu8_rx_buffer))
+						len = (int)sizeof(DATA_NONCE(item)->tu8_rx_buffer);
+					memcpy(DATA_NONCE(item)->tu8_rx_buffer, tu8_rx_buffer, len);
+					DATA_NONCE(item)->sizet_len = len;
+					DATA_NONCE(item)->sizet_previous_len = prelen;
+					DATA_NONCE(item)->s_tv_when.tv_sec = now.tv_sec;
+					DATA_NONCE(item)->s_tv_when.tv_usec = now.tv_usec;
 					K_WLOCK(info->nlist);
 					k_add_tail(info->nstore, item);
 					K_WUNLOCK(info->nlist);
@@ -3200,21 +2479,12 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			 default:
 				used = false;
 				if (len == (int)(info->rx_len) && okcrc)
-					used = gsf_reply(info, rx, info->rx_len, &now);
-#if 0
-if (!used)
-{
-applog(LOG_ERR, "%d: %s %d - unhandled, len %3d state %2d first 12:",
-	compac->cgminer_id, compac->drv->name, compac->device_id, len, info->mining_state);
-applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]",
-	rx[0], rx[1], rx[2], rx[3], rx[4], rx[5], rx[6], rx[7], rx[8], rx[9], rx[10], rx[11]);
-}
-#endif
+					used = gsf_reply(info, tu8_rx_buffer, info->rx_len, &now);
 				break;
 			}
 			// we've used up 0..len-1
 			if (pos > len)
-				memmove(rx, rx+len, pos-len);
+				memmove(tu8_rx_buffer, tu8_rx_buffer+len, pos-len);
 			pos -= len;
 		}
 
@@ -3242,194 +2512,26 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 	}
 	return NULL;
 }
-
+// Wrapper for reading data from miner.
+// @Todo to document
+// @mp : renvoie vers compac_listen2 dans le cas d'un BM1397
 static void *compac_listen(void *object)
 {
-	struct cgpu_info *compac = (struct cgpu_info *)object;
-	struct COMPAC_INFO *info = compac->device_data;
-
-	if (info->asic_type == BM1397)
-		return compac_listen2(compac, info);
-
-	struct timeval now;
-	unsigned char rx[BUFFER_MAX];
-	unsigned char *prx = rx;
-	int read_bytes, cmd_resp, pos;
-	unsigned int i, rx_bytes;
-
-	memset(rx, 0, sizeof(rx));
-	memset(info->rx, 0, sizeof(info->rx));
-
-	pos = 0;
-	rx_bytes = 0;
-
-	while (info->mining_state != MINER_SHUTDOWN) {
-
-		cgtime(&now);
-
-		if (info->mining_state == MINER_CHIP_COUNT) {
-			if (info->asic_type == BM1387) {
-				unsigned char buffer[] = {0x54, 0x05, 0x00, 0x00, 0x00};
-				compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8);
-			} else if (info->asic_type == BM1384) {
-				unsigned char buffer[] = {0x84, 0x00, 0x00, 0x00};
-				compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
-			}
-			usb_read_timeout(compac, (char *)rx, BUFFER_MAX, &read_bytes, 1000, C_GETRESULTS);
-			dumpbuffer(compac, LOG_INFO, "CMD.RX", rx, read_bytes);
-
-			rx_bytes = (unsigned int)read_bytes;
-			info->mining_state = MINER_CHIP_COUNT_XX;
-		} else {
-
-			if (rx_bytes >= (BUFFER_MAX - info->rx_len)) {
-				applog(LOG_INFO, "%d: %s %d - Buffer not useful, dumping (b) %d bytes", compac->cgminer_id, compac->drv->name, compac->device_id, rx_bytes);
-				dumpbuffer(compac, LOG_INFO, "NO-CRC-RX", rx, rx_bytes);
-				pos = 0;
-				rx_bytes = 0;
-			}
-
-			usb_read_timeout(compac, (char *)(&rx[pos]), info->rx_len, &read_bytes, 20, C_GETRESULTS);
-			rx_bytes += read_bytes;
-			pos = rx_bytes;
-		}
-
-		if (read_bytes > 0) {
-			if (rx_bytes < info->rx_len) {
-				applog(LOG_INFO, "%d: %s %d - Buffered %d bytes", compac->cgminer_id, compac->drv->name, compac->device_id, rx_bytes);
-				dumpbuffer(compac, LOG_INFO, "Partial-RX", rx, rx_bytes);
-				continue;
-			}
-
-			if (rx_bytes >= info->rx_len)
-				cmd_resp = (rx[read_bytes - 1] <= 0x1f && bmcrc(prx, 8 * read_bytes - 5) == rx[read_bytes - 1]) ? 1 : 0;
-
-			if (info->mining_state == MINER_CHIP_COUNT_XX || cmd_resp) {
-				if (rx_bytes % info->rx_len == 2) {
-					// fix up trial 1
-					int shift = 0;
-					int extra = 0;
-					for (i = 0; i < (rx_bytes - shift); i++) {
-						if (rx[i] == 0x01) {
-							shift = 2;
-							extra = rx[i + 1];
-						}
-						rx[i] = rx[i + shift];
-					}
-					rx_bytes -= shift;
-					pos = rx_bytes;
-					applog(LOG_INFO, "%d: %s %d - Extra Data - 0x01 0x%02x", compac->cgminer_id, compac->drv->name, compac->device_id, extra & 0xff);
-				}
-			}
-
-			if (rx_bytes >= info->rx_len) {
-				bool crc_match = false;
-				unsigned int new_pos = 0;
-				for (i = 0; i <= (rx_bytes - info->rx_len); i++) {
-					bool rx_okay = false;
-
-					if (bmcrc(&rx[i], 8 * info->rx_len - 5) == (rx[i + info->rx_len - 1] & 0x1f)) {
-						// crc checksum is good
-						crc_match = true;
-						rx_okay = true;
-					}
-					if (info->asic_type == BM1384 && rx[i + info->rx_len - 1] >= 0x80 && rx[i + info->rx_len - 1] <= 0x9f) {
-						// bm1384 nonce
-						rx_okay = true;
-					}
-					if (rx_okay) {
-						memcpy(info->rx, &rx[i], info->rx_len);
-						compac_handle_rx(compac, info->rx_len, 0);
-						new_pos = i + info->rx_len;
-					}
-				}
-				if (new_pos > rx_bytes) {
-					rx_bytes = 0;
-					pos = 0;
-				} else if (new_pos > 0) {
-					for (i = new_pos; i < rx_bytes; i++) {
-						rx[i - new_pos] = rx[i];
-					}
-					rx_bytes -= new_pos;
-					pos = rx_bytes;
-				}
-			}
-
-/*
-			if (bmcrc(&rx[rx_bytes - info->rx_len], 8 * info->rx_len - 5) != info->rx[rx_bytes - 1]) {
-				int n_read_bytes;
-				pos = rx_bytes;
-				usb_read_timeout(compac, &rx[pos], BUFFER_MAX - pos, &n_read_bytes, 5, C_GETRESULTS);
-				rx_bytes += n_read_bytes;
-
-				if (rx_bytes % info->rx_len != 0 && rx_bytes >= info->rx_len) {
-					int extra_bytes = rx_bytes % info->rx_len;
-					for (i = extra_bytes; i < rx_bytes; i++) {
-						rx[i - extra_bytes] = rx[i];
-					}
-					rx_bytes -= extra_bytes;
-					applog(LOG_INFO, "%d: %s %d - Fixing buffer alignment, dumping initial %d bytes", compac->cgminer_id, compac->drv->name, compac->device_id, extra_bytes);
-				}
-			}
-			if (rx_bytes % info->rx_len == 0) {
-				for (i = 0; i < rx_bytes; i += info->rx_len) {
-					memcpy(info->rx, &rx[i], info->rx_len);
-					compac_handle_rx(compac, info->rx_len, 1);
-				}
-				pos = 0;
-				rx_bytes = 0;
-			}
-*/
-		} else {
-
-			if (rx_bytes > 0) {
-				applog(LOG_INFO, "%d: %s %d - Second read, no data dumping (c) %d bytes", compac->cgminer_id, compac->drv->name, compac->device_id, rx_bytes);
-				dumpbuffer(compac, LOG_INFO, "EXTRA-RX", rx, rx_bytes);
-			}
-
-			pos = 0;
-			rx_bytes = 0;
-
-			// RX line is idle, let's squeeze in a command to the micro if needed.
-			if (info->asic_type == BM1387) {
-				if (ms_tdiff(&now, &info->last_micro_ping) > MS_SECOND_5 && ms_tdiff(&now, &info->last_task) > 1 && ms_tdiff(&now, &info->last_task) < 3) {
-					compac_micro_send(compac, M1_GET_TEMP, 0x00, 0x00);
-					cgtime(&info->last_micro_ping);
-				}
-			}
-
-			switch (info->mining_state) {
-				case MINER_CHIP_COUNT_XX:
-					if (info->chips < info->expected_chips) {
-						applog(LOG_INFO, "%d: %s %d - found %d/%d chip(s)", compac->cgminer_id, compac->drv->name, compac->device_id, info->chips, info->expected_chips);
-						info->mining_state = MINER_RESET;
-					} else {
-						applog(LOG_INFO, "%d: %s %d - found %d chip(s)", compac->cgminer_id, compac->drv->name, compac->device_id, info->chips);
-						if (info->chips > 0) {
-							info->mining_state = MINER_CHIP_COUNT_OK;
-							mutex_lock(&static_lock);
-							(*init_count) = 0;
-							info->init_count = 0;
-							mutex_unlock(&static_lock);
-						} else {
-							info->mining_state = MINER_RESET;
-						}
-					}
-					break;
-				default:
-					break;
-			}
-		}
+	struct cgpu_info *bm1397 = (struct cgpu_info *)object;
+	struct COMPAC_INFO *info = bm1397->device_data;
+	if (info->asic_type == BM1397) {
+		return compac_listen2(bm1397, info);
+	} else {
+		return NULL;
 	}
-	return NULL;
 }
 
 
 static bool compac_init(struct thr_info *thr)
 {
 	int i;
-	struct cgpu_info *compac = thr->cgpu;
-	struct COMPAC_INFO *info = compac->device_data;
+	struct cgpu_info *bm1397 = thr->cgpu;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	float step_freq;
 
 	// all are currently this value
@@ -3474,8 +2576,8 @@ static bool compac_init(struct thr_info *thr)
 	info->last_tune_up.tv_sec = 0L;
 	info->last_tune_up.tv_usec = 0L;
 
-	memset(info->rx, 0, sizeof(info->rx));
-	memset(info->tx, 0, sizeof(info->tx));
+	memset(info->tu8_rx_buffer, 0, sizeof(info->tu8_rx_buffer));
+	memset(info->tu8_tx_buffer, 0, sizeof(info->tu8_tx_buffer));
 	memset(info->cmd, 0, sizeof(info->cmd));
 	memset(info->end, 0, sizeof(info->end));
 	memset(info->task, 0, sizeof(info->task));
@@ -3513,36 +2615,6 @@ static bool compac_init(struct thr_info *thr)
 
 	switch (info->ident)
 	{
-	 case IDENT_BSC:
-	 case IDENT_GSC:
-		info->frequency_requested = limit_freq(info, opt_gekko_gsc_freq, false);
-		info->frequency_start = limit_freq(info, opt_gekko_start_freq, false);
-		break;
-	 case IDENT_BSD:
-	 case IDENT_GSD:
-		info->frequency_requested = limit_freq(info, opt_gekko_gsd_freq, false);
-		info->frequency_start = limit_freq(info, opt_gekko_start_freq, false);
-		break;
-	 case IDENT_BSE:
-	 case IDENT_GSE:
-		info->frequency_requested = limit_freq(info, opt_gekko_gse_freq, false);
-		info->frequency_start = limit_freq(info, opt_gekko_start_freq, false);
-		break;
-	 case IDENT_GSH:
-		info->frequency_requested = limit_freq(info, opt_gekko_gsh_freq, false);
-		info->frequency_start = limit_freq(info, opt_gekko_start_freq, false);
-		break;
-	 case IDENT_GSI:
-		info->frequency_requested = limit_freq(info, opt_gekko_gsi_freq, false);
-		info->frequency_start = limit_freq(info, opt_gekko_start_freq, false);
-		// default to 550
-		if (info->frequency_start == 100)
-			info->frequency_start = 550;
-		if (info->frequency_start < 100)
-			info->frequency_start = 100;
-		// due to higher freq allow longer
-		info->ramp_time = MS_MINUTE_4;
-		break;
 	 case IDENT_GSF:
 	 case IDENT_GSFM:
 		if (info->ident == IDENT_GSF)
@@ -3599,7 +2671,7 @@ static bool compac_init(struct thr_info *thr)
 	info->frequency = info->frequency_start;
 	info->frequency_default = info->frequency_start;
 
-	if (!info->rthr.pth) {
+	if (!info->listening_thrd.pth) {
 		pthread_mutex_init(&info->lock, NULL);
 		pthread_mutex_init(&info->wlock, NULL);
 		pthread_mutex_init(&info->rlock, NULL);
@@ -3614,24 +2686,24 @@ static bool compac_init(struct thr_info *thr)
 			info->nstore = k_new_store(info->nlist);
 		}
 
-		if (thr_info_create(&(info->rthr), NULL, compac_listen, (void *)compac)) {
-			applog(LOG_ERR, "%d: %s %d - read thread create failed", compac->cgminer_id, compac->drv->name, compac->device_id);
+		if (thr_info_create(&(info->listening_thrd), NULL, compac_listen, (void *)bm1397)) {
+			applog(LOG_ERR, "%d: %s %d - read thread create failed", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 			return false;
 		} else {
-			applog(LOG_INFO, "%d: %s %d - read thread created", compac->cgminer_id, compac->drv->name, compac->device_id);
+			applog(LOG_INFO, "%d: %s %d - read thread created", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 		}
-		pthread_detach(info->rthr.pth);
+		pthread_detach(info->listening_thrd.pth);
 
 		gekko_usleep(info, MS2US(100));
 
-		if (thr_info_create(&(info->wthr), NULL, compac_mine2, (void *)compac)) {
-			applog(LOG_ERR, "%d: %s %d - write thread create failed", compac->cgminer_id, compac->drv->name, compac->device_id);
+		if (thr_info_create(&(info->work_thrd), NULL, compac_mine2, (void *)bm1397)) {
+			applog(LOG_ERR, "%d: %s %d - write thread create failed", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 			return false;
 		} else {
-			applog(LOG_INFO, "%d: %s %d - write thread created", compac->cgminer_id, compac->drv->name, compac->device_id);
+			applog(LOG_INFO, "%d: %s %d - write thread created", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 		}
 
-		pthread_detach(info->wthr.pth);
+		pthread_detach(info->work_thrd.pth);
 
 		if (info->ident == IDENT_GSF || info->ident == IDENT_GSFM)
 		{
@@ -3640,25 +2712,25 @@ static bool compac_init(struct thr_info *thr)
 			if (pthread_mutex_init(&info->nlock, NULL))
 			{
 				applog(LOG_ERR, "%d: %s %d - nonce mutex create failed",
-					compac->cgminer_id, compac->drv->name, compac->device_id);
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 				return false;
 			}
 			if (pthread_cond_init(&info->ncond, NULL))
 			{
 				applog(LOG_ERR, "%d: %s %d - nonce cond create failed",
-					compac->cgminer_id, compac->drv->name, compac->device_id);
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 				return false;
 			}
-			if (thr_info_create(&(info->nthr), NULL, compac_gsf_nonce_que, (void *)compac))
+			if (thr_info_create(&(info->nthr), NULL, compac_gsf_nonce_que, (void *)bm1397))
 			{
 				applog(LOG_ERR, "%d: %s %d - nonce thread create failed",
-					compac->cgminer_id, compac->drv->name, compac->device_id);
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 				return false;
 			}
 			else
 			{
 				applog(LOG_INFO, "%d: %s %d - nonce thread created",
-					compac->cgminer_id, compac->drv->name, compac->device_id);
+					bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 			}
 
 			pthread_detach(info->nthr.pth);
@@ -3670,8 +2742,8 @@ static bool compac_init(struct thr_info *thr)
 
 static int64_t compac_scanwork(struct thr_info *thr)
 {
-	struct cgpu_info *compac = thr->cgpu;
-	struct COMPAC_INFO *info = compac->device_data;
+	struct cgpu_info *bm1397 = thr->cgpu;
+	struct COMPAC_INFO *info = bm1397->device_data;
 
 	struct timeval now;
 	int read_bytes;
@@ -3681,21 +2753,15 @@ static int64_t compac_scanwork(struct thr_info *thr)
 	if (info->chips == 0)
 		gekko_usleep(info, MS2US(10));
 
-	if (compac->usbinfo.nodev)
+	if (bm1397->usbinfo.nodev)
 		return -1;
-
-#ifdef __APPLE__
-	if (opt_mac_yield)
-		sched_yield();
-#else
 	selective_yield();
-#endif
 	cgtime(&now);
 
 	switch (info->mining_state) {
 		case MINER_INIT:
 			gekko_usleep(info, MS2US(50));
-			compac_flush_buffer(compac);
+			compac_flush_buffer(bm1397);
 			info->chips = 0;
 			info->ramping = 0;
 			info->frequency_syncd = 1;
@@ -3707,7 +2773,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			break;
 		case MINER_CHIP_COUNT:
 			if (ms_tdiff(&now, &info->last_reset) > MS_SECOND_5) {
-				applog(LOG_INFO, "%d: %s %d - found 0 chip(s)", compac->cgminer_id, compac->drv->name, compac->device_id);
+				applog(LOG_INFO, "%d: %s %d - found 0 chip(s)", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 				info->mining_state = MINER_RESET;
 				return 0;
 			}
@@ -3715,12 +2781,12 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			break;
 		case MINER_CHIP_COUNT_OK:
 			gekko_usleep(info, MS2US(50));
-			//compac_set_frequency(compac, info->frequency_start);
-			compac_send_chain_inactive(compac);
+			//compac_set_frequency(bm1397, info->frequency_start);
+			compac_send_chain_inactive(bm1397);
 
-			if (info->asic_type == BM1397)
+			if (info->asic_type == BM1397) {
 				info->mining_state = MINER_OPEN_CORE_OK;
-
+			}
 			return 0;
 			break;
 		case MINER_OPEN_CORE:
@@ -3728,9 +2794,9 @@ static int64_t compac_scanwork(struct thr_info *thr)
 
 			//info->task_hcn = (0xffffffff / info->chips) * (1 + info->ramping) / info->cores;
 			init_task(info);
-			dumpbuffer(compac, LOG_DEBUG, "RAMP", info->task, info->task_len);
+			dumpbuffer(bm1397, LOG_DEBUG, "RAMP", info->task, info->task_len);
 
-			usb_write(compac, (char *)info->task, info->task_len, &read_bytes, C_SENDWORK);
+			usb_write(bm1397, (char *)info->task, info->task_len, &read_bytes, C_SENDWORK);
 			if (info->ramping > (info->cores * info->add_job_id)) {
 				//info->job_id = 0;
 				info->mining_state = MINER_OPEN_CORE_OK;
@@ -3745,18 +2811,18 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			return 0;
 			break;
 		case MINER_OPEN_CORE_OK:
-			applog(LOG_INFO, "%d: %s %d - start work", compac->cgminer_id, compac->drv->name, compac->device_id);
+			applog(LOG_INFO, "%d: %s %d - start work", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
 			if (info->asic_type == BM1397)
-				gsf_calc_nb2c(compac);
+				gsf_calc_nb2c(bm1397);
 			cgtime(&info->start_time);
 			cgtime(&info->monitor_time);
 			cgtime(&info->last_frequency_adjust);
 			info->last_dup_time = (struct timeval){0};
 			cgtime(&info->last_frequency_report);
 			cgtime(&info->last_micro_ping);
-			cgtime(&info->last_nonce);
-			compac_flush_buffer(compac);
-			compac_update_rates(compac);
+			cgtime(&info->s_tv_last_nonce);
+			compac_flush_buffer(bm1397);
+			compac_update_rates(bm1397);
 			info->update_work = 1;
 			info->mining_state = MINER_MINING;
 			return 0;
@@ -3764,12 +2830,9 @@ static int64_t compac_scanwork(struct thr_info *thr)
 		case MINER_MINING:
 			break;
 		case MINER_RESET:
-			compac_flush_work(compac);
-			if (info->asic_type == BM1387 || info->asic_type == BM1397) {
-				compac_toggle_reset(compac);
-			} else if (info->asic_type == BM1384) {
-				compac_set_frequency(compac, info->frequency_default);
-				//compac_send_chain_inactive(compac);
+			compac_flush_work(bm1397);
+			if (info->asic_type == BM1397) {
+				compac_toggle_reset(bm1397);
 			}
 			compac_prepare(thr);
 
@@ -3780,7 +2843,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			// in case clock jumps back ...
 			cgtime(&info->tune_limit);
 
-			// wipe info->gh/asic->gc
+			// wipe info->gh/i32_asic->s_bm1397_chip
 			gh_offset(info, &now, true, false);
 			// wipe info->job
 			job_offset(info, &now, true, false);
@@ -3807,21 +2870,21 @@ static int64_t compac_scanwork(struct thr_info *thr)
 	//return hashes;
 }
 
-static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb_find_devices *found)
+static struct cgpu_info *bm1397_detect_one(struct libusb_device *dev, struct usb_find_devices *found)
 {
-	struct cgpu_info *compac;
+	struct cgpu_info *bm1397;
 	struct COMPAC_INFO *info;
 	int i;
 	bool exclude_me = 0;
 	uint32_t baudrate = CP210X_DATA_BAUD;
 	unsigned int bits = CP210X_BITS_DATA_8 | CP210X_BITS_PARITY_MARK;
 
-	compac = usb_alloc_cgpu(&bm1397_drv, 1);
+	bm1397 = usb_alloc_cgpu(&bm1397_drv, 1);
 
-	if (!usb_init(compac, dev, found))
+	if (!usb_init(bm1397, dev, found))
 	{
 		applog(LOG_INFO, "failed usb_init");
-		compac = usb_free_cgpu(compac);
+		bm1397 = usb_free_cgpu(bm1397);
 		return NULL;
 	}
 
@@ -3832,67 +2895,34 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 	pthread_mutex_init(&info->slock, NULL);
 #endif
 
-	compac->device_data = (void *)info;
+	bm1397->device_data = (void *)info;
 
-	info->ident = usb_ident(compac);
+	info->ident = usb_ident(bm1397);
 
 	if (opt_gekko_gsc_detect || opt_gekko_gsd_detect || opt_gekko_gse_detect
 	||  opt_gekko_gsh_detect || opt_gekko_gsi_detect || opt_gekko_gsf_detect
 	||  opt_gekko_r909_detect)
 	{
-		exclude_me  = (info->ident == IDENT_BSC && !opt_gekko_gsc_detect);
-		exclude_me |= (info->ident == IDENT_GSC && !opt_gekko_gsc_detect);
-		exclude_me |= (info->ident == IDENT_BSD && !opt_gekko_gsd_detect);
-		exclude_me |= (info->ident == IDENT_GSD && !opt_gekko_gsd_detect);
-		exclude_me |= (info->ident == IDENT_BSE && !opt_gekko_gse_detect);
-		exclude_me |= (info->ident == IDENT_GSE && !opt_gekko_gse_detect);
-		exclude_me |= (info->ident == IDENT_GSH && !opt_gekko_gsh_detect);
-		exclude_me |= (info->ident == IDENT_GSI && !opt_gekko_gsi_detect);
 		exclude_me |= (info->ident == IDENT_GSF && !opt_gekko_gsf_detect);
 		exclude_me |= (info->ident == IDENT_GSFM && !opt_gekko_r909_detect);
 	}
 
-	if (opt_gekko_serial != NULL
-	&&  (strstr(opt_gekko_serial, compac->usbdev->serial_string) == NULL))
+	if (opt_gekko_serial != NULL && 
+		(strstr(opt_gekko_serial, bm1397->usbdev->serial_string) == NULL))
 	{
 		exclude_me = true;
 	}
 
 	if (exclude_me)
 	{
-		usb_uninit(compac);
+		usb_uninit(bm1397);
 		free(info);
-		compac->device_data = NULL;
+		bm1397->device_data = NULL;
 		return NULL;
 	}
 
 	switch (info->ident)
 	{
-		case IDENT_BSC:
-		case IDENT_GSC:
-		case IDENT_BSD:
-		case IDENT_GSD:
-		case IDENT_BSE:
-		case IDENT_GSE:
-			info->asic_type = BM1384;
-
-			usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_IFC_ENABLE,
-						CP210X_VALUE_UART_ENABLE, info->interface, NULL, 0, C_ENABLE_UART);
-			usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_DATA,
-						CP210X_VALUE_DATA, info->interface, NULL, 0, C_SETDATA);
-			usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_BAUD,
-						0, info->interface, &baudrate, sizeof (baudrate), C_SETBAUD);
-			usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_SET_LINE_CTL,
-						bits, info->interface, NULL, 0, C_SETPARITY);
-			break;
-		case IDENT_GSH:
-			info->asic_type = BM1387;
-			info->expected_chips = 2;
-			break;
-		case IDENT_GSI:
-			info->asic_type = BM1387;
-			info->expected_chips = 12;
-			break;
 		case IDENT_GSF:
 		case IDENT_GSFM:
 			info->asic_type = BM1397;
@@ -3901,31 +2931,12 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 			break;
 		default:
 			quit(1, "%d: %s compac_detect_one() invalid %s ident=%d",
-				compac->cgminer_id, compac->drv->dname, compac->drv->dname, info->ident);
+				bm1397->cgminer_id, bm1397->drv->dname, bm1397->drv->dname, info->ident);
 	}
 
 	info->min_job_id = 0x10;
 	switch (info->asic_type)
 	{
-		case BM1384:
-			info->rx_len = 5;
-			info->task_len = 64;
-			info->cores = 55;
-			info->add_job_id = 1;
-			info->max_job_id = 0x1f;
-			info->midstates = 1;
-			info->can_boost = false;
-			break;
-		case BM1387:
-			info->rx_len = 7;
-			info->task_len = 54;
-			info->cores = 114;
-			info->add_job_id = 1;
-			info->max_job_id = 0x7f;
-			info->midstates = (opt_gekko_lowboost) ? 2 : 4;
-			info->can_boost = true;
-			compac_toggle_reset(compac);
-			break;
 		case BM1397:
 			info->rx_len = 9;
 			info->task_len = 54;
@@ -3935,43 +2946,47 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 			// ignore lowboost
 			info->midstates = 4;
 			info->can_boost = true;
-			compac_toggle_reset(compac);
+			compac_toggle_reset(bm1397);
 			break;
 		default:
 			break;
 	}
 
-	info->interface = usb_interface(compac);
+	info->interface = usb_interface(bm1397);
 	info->mining_state = MINER_INIT;
 
 	applog(LOG_DEBUG, "Using interface %d", info->interface);
 
-	if (!add_cgpu(compac))
+	if (!add_cgpu(bm1397)) {
 		quit(1, "Failed to add_cgpu in compac_detect_one");
+	}
 
-	update_usb_stats(compac);
+	update_usb_stats(bm1397);
 
-	for (i = 0; i < 8; i++)
-		compac->unique_id[i] = compac->unique_id[i+3];
-	compac->unique_id[8] = 0;
+	for (i = 0; i < 8; i++) {
+		bm1397->unique_id[i] = bm1397->unique_id[i+3];
+	}
+
+	bm1397->unique_id[8] = 0;
 
 	info->wait_factor = info->wait_factor0;
-	if (!opt_gekko_noboost && info->vmask && (info->asic_type == BM1387 || info->asic_type == BM1397))
-		info->wait_factor *= info->midstates;
 
-	return compac;
+	if (!opt_gekko_noboost && info->vmask && (info->asic_type == BM1397)) {
+		info->wait_factor *= info->midstates;
+	}
+	return bm1397;
 }
 
-static void compac_detect(bool __maybe_unused hotplug)
+static void bm1397_detect(bool __maybe_unused hotplug)
 {
-	usb_detect(&bm1397_drv, compac_detect_one);
+	usb_detect(&bm1397_drv, bm1397_detect_one);
 }
 
 static bool compac_prepare(struct thr_info *thr)
 {
-	struct cgpu_info *compac = thr->cgpu;
-	struct COMPAC_INFO *info = compac->device_data;
-	int device = (compac->usbinfo.bus_number * 0xff + compac->usbinfo.device_address) % 0xffff;
+	struct cgpu_info *bm1397 = thr->cgpu;
+	struct COMPAC_INFO *info = bm1397->device_data;
+	int device = (bm1397->usbinfo.bus_number * 0xff + bm1397->usbinfo.device_address) % 0xffff;
 
 	mutex_lock(&static_lock);
 	init_count = &dev_init_count[device];
@@ -3981,183 +2996,56 @@ static bool compac_prepare(struct thr_info *thr)
 
 	if (info->init_count == 1) {
 		applog(LOG_WARNING, "%d: %s %d - %s (%s)",
-			compac->cgminer_id, compac->drv->name, compac->device_id,
-			compac->usbdev->prod_string, compac->unique_id);
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
+			bm1397->usbdev->prod_string, bm1397->unique_id);
 	} else {
 		applog(LOG_INFO, "%d: %s %d - init_count %d",
-			compac->cgminer_id, compac->drv->name, compac->device_id,
+			bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id,
 			info->init_count);
 	}
 
-	info->thr = thr;
+	info->p_running_thrd = thr;
 	info->bauddiv = 0x19; // 115200
-	//info->bauddiv = 0x0D; // 214286
-	//info->bauddiv = 0x07; // 375000
-
-	//Sanity check and abort to prevent miner thread from being created.
-	if (info->asic_type == BM1387) {
-		// Ping Micro
-		info->micro_found = 0;
-/*
-		if (info->asic_type == BM1387) {
-			info->vcore = bound(opt_gekko_gsh_vcore, 300, 810);
-			info->micro_found = 1;
-			if (!compac_micro_send(compac, M1_GET_TEMP, 0x00, 0x00)) {
-				info->micro_found = 0;
-				applog(LOG_INFO, "%d: %s %d - micro not found : dummy mode", compac->cgminer_id, compac->drv->name, compac->device_id);
-			} else {
-				uint8_t vcc = (info->vcore / 1000.0 - 0.3) / 0.002;
-				applog(LOG_INFO, "%d: %s %d - requesting vcore of %dmV (%x)", compac->cgminer_id, compac->drv->name, compac->device_id, info->vcore, vcc);
-				compac_micro_send(compac, M2_SET_VCORE, 0x00, vcc);   // Default 400mV
-			}
-		}
-*/
-
-	}
 
 	if (info->init_count != 0 && info->init_count % 5 == 0) {
-		applog(LOG_INFO, "%d: %s %d - forcing usb_nodev()", compac->cgminer_id, compac->drv->name, compac->device_id);
-		usb_nodev(compac);
+		applog(LOG_INFO, "%d: %s %d - forcing usb_nodev()", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
+		usb_nodev(bm1397);
 	} else if (info->init_count > 1) {
 		if (info->init_count > 10) {
-			compac->deven = DEV_DISABLED;
+			bm1397->deven = DEV_DISABLED;
 		} else {
 			cgsleep_ms(MS_SECOND_5);
 		}
 	}
-
 	return true;
 }
 
-static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
+static void compac_shutdown(struct thr_info *thr)
 {
-	struct COMPAC_INFO *info = compac->device_data;
-	struct timeval now;
-	unsigned int i;
-
-	char ab[2];
-	char asic_stat[64];
-	char asic_statline[512];
-	char ms_stat[64];
-	char eff_stat[64];
-	uint32_t len = 0;
-
-	memset(asic_statline, 0, sizeof(asic_statline));
-	memset(asic_stat, 0, sizeof(asic_stat));
-	memset(ms_stat, 0, sizeof(ms_stat));
-	memset(eff_stat, 0, sizeof(eff_stat));
-
-	if (info->chips == 0) {
-		if (info->init_count > 1) {
-			sprintf(asic_statline, "found 0 chip(s)");
-		}
-
-		for (i = strlen(asic_statline); i < stat_len + 15; i++)
-			asic_statline[i] = ' ';
-
-		tailsprintf(buf, bufsiz, "%s", asic_statline);
-		return;
-	}
-
-	ab[0] = (info->boosted) ? '+' : 0;
-	ab[1] = 0;
-
-	if (info->chips > chip_max)
-		chip_max = info->chips;
-
-	cgtime(&now);
-
-	if (opt_widescreen) {
-		asic_stat[0] = '[';
-
-		for (i = 1; i <= info->chips; i++) {
-			struct ASIC_INFO *asic = &info->asics[i - 1];
-
-			switch (asic->state) {
-				case ASIC_HEALTHY:
-					asic_stat[i] = 'o';
-					break;
-				case ASIC_HALFDEAD:
-					asic_stat[i] = '-';
-					break;
-				case ASIC_ALMOST_DEAD:
-					asic_stat[i] = '!';
-					break;
-				case ASIC_DEAD:
-					asic_stat[i] = 'x';
-					break;
-			}
-
-		}
-		asic_stat[info->chips + 1] = ']';
-		for (i = 1; i <= (chip_max - info->chips) + 1; i++)
-			asic_stat[info->chips + 1 + i] = ' ';
-	}
-
-	sprintf(ms_stat, "(%.0f:%.0f)", info->task_ms, info->fullscan_ms);
-
-	uint8_t wuc = (ms_tdiff(&now, &info->last_wu_increase) > MS_MINUTE_1) ? 32 : 94;
-
-	if (info->eff_gs >= 99.9 && info->eff_wu >= 98.9) {
-		sprintf(eff_stat, "|  100%% WU:100%%");
-	} else if (info->eff_gs >= 99.9) {
-		sprintf(eff_stat, "|  100%% WU:%c%2.0f%%", wuc, info->eff_wu);
-	} else if (info->eff_wu >= 98.9) {
-		sprintf(eff_stat, "| %4.1f%% WU:100%%", info->eff_gs);
-	} else {
-		sprintf(eff_stat, "| %4.1f%% WU:%c%2.0f%%", info->eff_gs, wuc, info->eff_wu);
-	}
-
-	if (info->asic_type == BM1387 || info->asic_type == BM1397) {
-		char *chipnam = ((info->asic_type == BM1387) ? "BM1387" : "BM1397");
-
-		if (info->micro_found) {
-			sprintf(asic_statline, "%s:%02d%-1s %.2fMHz T:%.0f P:%.0f %s %.0fF",
-				chipnam, info->chips, ab, info->frequency, info->frequency_requested,
-				info->frequency_computed, ms_stat, info->micro_temp);
-		} else {
-			if (opt_widescreen) {
-				sprintf(asic_statline, "%s:%02d%-1s %.0f/%.0f/%3.0f %s %s",
-					chipnam, info->chips, ab, info->frequency, info->frequency_requested,
-					info->frequency_computed, ms_stat, asic_stat);
-			} else {
-				sprintf(asic_statline, "%s:%02d%-1s %.2fMHz T:%-3.0f P:%-3.0f %s %s",
-					chipnam, info->chips, ab, info->frequency, info->frequency_requested,
-					info->frequency_computed, ms_stat, asic_stat);
-			}
-		}
-	} else {
-		if (opt_widescreen) {
-			sprintf(asic_statline, "BM1384:%02d  %.0f/%.0f/%.0f %s %s",
-				info->chips, info->frequency, info->frequency_requested,
-				info->frequency_computed, ms_stat, asic_stat);
-		} else {
-			sprintf(asic_statline, "BM1384:%02d  %.2fMHz T:%-3.0f P:%-3.0f %s %s",
-				info->chips, info->frequency, info->frequency_requested,
-				info->frequency_computed, ms_stat, asic_stat);
+	struct cgpu_info *bm1397 = thr->cgpu;
+	struct COMPAC_INFO *info = bm1397->device_data;
+	applog(LOG_INFO, "%d: %s %d - shutting down", bm1397->cgminer_id, bm1397->drv->name, bm1397->device_id);
+	if (!bm1397->usbinfo.nodev) {
+		if (info->asic_type == BM1397) {
+			calc_gsf_freq(bm1397, 0, -1);
+			compac_toggle_reset(bm1397);
 		}
 	}
-
-	len = strlen(asic_statline);
-	if (len > stat_len || opt_widescreen != last_widescreen) {
-		mutex_lock(&static_lock);
-		stat_len = len;
-		last_widescreen = opt_widescreen;
-		mutex_unlock(&static_lock);
-	}
-
-	for (i = len; i < stat_len; i++)
-		asic_statline[i] = ' ';
-
-	strcat(asic_statline, eff_stat);
-	asic_statline[63] = 0;
-
-	tailsprintf(buf, bufsiz, "%s", asic_statline);
+	info->mining_state = MINER_SHUTDOWN;
+	pthread_join(info->listening_thrd.pth, NULL); // Let thread close.
+	pthread_join(info->work_thrd.pth, NULL); // Let thread close.
+	if (info->asic_type == BM1397)
+		pthread_join(info->nthr.pth, NULL); // Let thread close.
+	PTH(thr) = 0L;
 }
 
-static struct api_data *compac_api_stats(struct cgpu_info *compac)
+/** **************************************************** **/
+/**  Api related stuff  **/
+/** **************************************************** **/
+
+static struct api_data *bm1397_api_stats(struct cgpu_info *bm1397)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	struct api_data *root = NULL;
 	struct timeval now;
 	char nambuf[64], buf256[256];
@@ -4173,7 +3061,7 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	else
 		tps = (double)(info->tasks - 1) / taskdiff;
 
-	root = api_add_string(root, "Serial", compac->usbdev->serial_string, false);
+	root = api_add_string(root, "Serial", bm1397->usbdev->serial_string, false);
 	root = api_add_int(root, "Nonces", &info->nonces, false);
 	root = api_add_int(root, "Accepted", &info->accepted, false);
 	root = api_add_double(root, "TasksPerSec", &tps, true);
@@ -4199,7 +3087,7 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	secs = now.tv_sec - info->gh.zerosec;
 	root = api_add_time(root, "GHZeroDelta", &secs, true);
 	root = api_add_int(root, "GHLast", &info->gh.last, true);
-	root = api_add_int(root, "GHNonces", &info->gh.noncesum, true);
+	root = api_add_int(root, "GHNonces", &info->gh.i32_nb_nonces, true);
 	root = api_add_int64(root, "GHDiff", &info->gh.diffsum, true);
 	root = api_add_double(root, "GHGHs", &ghs, true);
 	mutex_unlock(&info->ghlock);
@@ -4306,13 +3194,13 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	mutex_lock(&info->ghlock);
 	for (i = 0; i < (int)info->chips; i++)
 	{
-		struct ASIC_INFO *asic = &info->asics[i];
+		struct S_ASIC_INFO *i32_asic = &info->asics[i];
 		snprintf(nambuf, sizeof(nambuf), "Chip%dNonces", i);
-		root = api_add_int(root, nambuf, &asic->nonces, true);
+		root = api_add_int(root, nambuf, &i32_asic->i32_nonces, true);
 		snprintf(nambuf, sizeof(nambuf), "Chip%dDups", i);
-		root = api_add_uint(root, nambuf, &asic->dupsall, true);
+		root = api_add_uint(root, nambuf, &i32_asic->u32_total_duplicate_nonce_counter, true);
 
-		gc_offset(info, asic, &now, false, true);
+		gc_offset(info, i32_asic, &now, false, true);
 		snprintf(nambuf, sizeof(nambuf), "Chip%dRanges", i);
 		buf256[0] = '\0';
 		for (j = 0; j < CHNUM; j++)
@@ -4321,21 +3209,21 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 			// slash, digit, null = 3
 			if ((len - sizeof(buf256)) < 3)
 				break;
-			k = CHOFF(asic->gc.offset - j);
-			snprintf(buf256+len, sizeof(buf256)-len, "/%d", asic->gc.noncenum[k]);
+			k = CHOFF(i32_asic->s_bm1397_chip.i32_offset - j);
+			snprintf(buf256+len, sizeof(buf256)-len, "/%d", i32_asic->s_bm1397_chip.t_i32_nb_nonces_ranges[k]);
 		}
 		len = strlen(buf256);
 		if ((len - sizeof(buf256)) >= 3)
-			snprintf(buf256+len, sizeof(buf256)-len, "/%d", asic->gc.noncesum);
+			snprintf(buf256+len, sizeof(buf256)-len, "/%d", i32_asic->s_bm1397_chip.i32_nb_nonces);
 		len = strlen(buf256);
 		if ((len - sizeof(buf256)) >= 3)
 			snprintf(buf256+len, sizeof(buf256)-len, "/%.2f%%", noncepercent(info, i, &now));
 		root = api_add_string(root, nambuf, buf256+1, true);
 
 		snprintf(nambuf, sizeof(nambuf), "Chip%dFreqSend", i);
-		root = api_add_float(root, nambuf, &asic->frequency, true);
+		root = api_add_float(root, nambuf, &i32_asic->f_frequency, true);
 		snprintf(nambuf, sizeof(nambuf), "Chip%dFreqReply", i);
-		root = api_add_float(root, nambuf, &asic->frequency_reply, true);
+		root = api_add_float(root, nambuf, &i32_asic->f_frequency_reply, true);
 	}
 	mutex_unlock(&info->ghlock);
 
@@ -4465,77 +3353,125 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	root = api_add_uint64(root, "SW10Count", &swt10, true);
 	root = api_add_uint64(root, "SW100Count", &swt100, true);
 #endif
-
 	return root;
 }
-
-static void compac_shutdown(struct thr_info *thr)
+static void bm1397_statline(char *buf, size_t bufsiz, struct cgpu_info *bm1397)
 {
-	struct cgpu_info *compac = thr->cgpu;
-	struct COMPAC_INFO *info = compac->device_data;
-	applog(LOG_INFO, "%d: %s %d - shutting down", compac->cgminer_id, compac->drv->name, compac->device_id);
-	if (!compac->usbinfo.nodev) {
-		if (info->asic_type == BM1387) {
-			compac_micro_send(compac, M2_SET_VCORE, 0x00, 0x00);   // 300mV
-			compac_toggle_reset(compac);
-		} else if (info->asic_type == BM1397) {
-			calc_gsf_freq(compac, 0, -1);
-			compac_toggle_reset(compac);
-		} else if (info->asic_type == BM1384 && info->frequency != info->frequency_default) {
-			float frequency = info->frequency - info->freq_mult;
-			while (frequency > info->frequency_default) {
-				compac_set_frequency(compac, frequency);
-				frequency -= info->freq_mult;
-				cgsleep_ms(100);
+	struct COMPAC_INFO *info = bm1397->device_data;
+	struct timeval now;
+	unsigned int i;
+
+	char ab[2];
+	char asic_stat[64];
+	char asic_statline[512];
+	char ms_stat[64];
+	char eff_stat[64];
+	uint32_t len = 0;
+
+	memset(asic_statline, 0, sizeof(asic_statline));
+	memset(asic_stat, 0, sizeof(asic_stat));
+	memset(ms_stat, 0, sizeof(ms_stat));
+	memset(eff_stat, 0, sizeof(eff_stat));
+
+	if (info->chips == 0) {
+		if (info->init_count > 1) {
+			sprintf(asic_statline, "found 0 chip(s)");
+		}
+
+		for (i = strlen(asic_statline); i < stat_len + 15; i++)
+			asic_statline[i] = ' ';
+
+		tailsprintf(buf, bufsiz, "%s", asic_statline);
+		return;
+	}
+
+	ab[0] = (info->boosted) ? '+' : 0;
+	ab[1] = 0;
+
+	if (info->chips > chip_max)
+		chip_max = info->chips;
+
+	cgtime(&now);
+
+	if (opt_widescreen) {
+		asic_stat[0] = '[';
+
+		for (i = 1; i <= info->chips; i++) {
+			struct S_ASIC_INFO *i32_asic = &info->asics[i - 1];
+
+			switch (i32_asic->e_asic_state) {
+				case ASIC_HEALTHY:
+					asic_stat[i] = 'o';
+					break;
+				case ASIC_HALFDEAD:
+					asic_stat[i] = '-';
+					break;
+				case ASIC_ALMOST_DEAD:
+					asic_stat[i] = '!';
+					break;
+				case ASIC_DEAD:
+					asic_stat[i] = 'x';
+					break;
 			}
-			compac_set_frequency(compac, info->frequency_default);
-			compac_send_chain_inactive(compac);
+
+		}
+		asic_stat[info->chips + 1] = ']';
+		for (i = 1; i <= (chip_max - info->chips) + 1; i++)
+			asic_stat[info->chips + 1 + i] = ' ';
+	}
+
+	sprintf(ms_stat, "(%.0f:%.0f)", info->task_ms, info->fullscan_ms);
+
+	uint8_t wuc = (ms_tdiff(&now, &info->last_wu_increase) > MS_MINUTE_1) ? 32 : 94;
+
+	if (info->eff_gs >= 99.9 && info->eff_wu >= 98.9) {
+		sprintf(eff_stat, "|  100%% WU:100%%");
+	} else if (info->eff_gs >= 99.9) {
+		sprintf(eff_stat, "|  100%% WU:%c%2.0f%%", wuc, info->eff_wu);
+	} else if (info->eff_wu >= 98.9) {
+		sprintf(eff_stat, "| %4.1f%% WU:100%%", info->eff_gs);
+	} else {
+		sprintf(eff_stat, "| %4.1f%% WU:%c%2.0f%%", info->eff_gs, wuc, info->eff_wu);
+	}
+
+	if (info->asic_type == BM1397) {
+		char *chipnam ="BM1397";
+
+		if (info->micro_found) {
+			sprintf(asic_statline, "%s:%02d%-1s %.2fMHz T:%.0f P:%.0f %s %.0fF",
+				chipnam, info->chips, ab, info->frequency, info->frequency_requested,
+				info->frequency_computed, ms_stat, info->micro_temp);
+		} else {
+			if (opt_widescreen) {
+				sprintf(asic_statline, "%s:%02d%-1s %.0f/%.0f/%3.0f %s %s",
+					chipnam, info->chips, ab, info->frequency, info->frequency_requested,
+					info->frequency_computed, ms_stat, asic_stat);
+			} else {
+				sprintf(asic_statline, "%s:%02d%-1s %.2fMHz T:%-3.0f P:%-3.0f %s %s",
+					chipnam, info->chips, ab, info->frequency, info->frequency_requested,
+					info->frequency_computed, ms_stat, asic_stat);
+			}
 		}
 	}
-	info->mining_state = MINER_SHUTDOWN;
-	pthread_join(info->rthr.pth, NULL); // Let thread close.
-	pthread_join(info->wthr.pth, NULL); // Let thread close.
-	if (info->asic_type == BM1397)
-		pthread_join(info->nthr.pth, NULL); // Let thread close.
-	PTH(thr) = 0L;
-}
-
-uint64_t bound(uint64_t value, uint64_t lower_bound, uint64_t upper_bound)
-{
-	if (value < lower_bound)
-		return lower_bound;
-	if (value > upper_bound)
-		return upper_bound;
-	return value;
-}
-
-void stuff_reverse(unsigned char *dst, unsigned char *src, uint32_t len)
-{
-	uint32_t i;
-	for (i = 0; i < len; i++) {
-		dst[i] = src[len - i - 1];
+	len = strlen(asic_statline);
+	if (len > stat_len || opt_widescreen != last_widescreen) {
+		mutex_lock(&static_lock);
+		stat_len = len;
+		last_widescreen = opt_widescreen;
+		mutex_unlock(&static_lock);
 	}
-}
 
-void stuff_lsb(unsigned char *dst, uint32_t x)
-{
-	dst[0] = (x >>  0) & 0xff;
-	dst[1] = (x >>  8) & 0xff;
-	dst[2] = (x >> 16) & 0xff;
-	dst[3] = (x >> 24) & 0xff;
-}
+	for (i = len; i < stat_len; i++)
+		asic_statline[i] = ' ';
 
-void stuff_msb(unsigned char *dst, uint32_t x)
-{
-	dst[0] = (x >> 24) & 0xff;
-	dst[1] = (x >> 16) & 0xff;
-	dst[2] = (x >>  8) & 0xff;
-	dst[3] = (x >>  0) & 0xff;
-}
+	strcat(asic_statline, eff_stat);
+	asic_statline[63] = 0;
 
-static char *compac_api_set(struct cgpu_info *compac, char *option, char *setting, char *replybuf, size_t siz)
+	tailsprintf(buf, bufsiz, "%s", asic_statline);
+}
+static char *bm1397_api_set(struct cgpu_info *bm1397, char *option, char *setting, char *replybuf, size_t siz)
 {
-	struct COMPAC_INFO *info = compac->device_data;
+	struct COMPAC_INFO *info = bm1397->device_data;
 	float freq;
 
 	if (strcasecmp(option, "help") == 0)
@@ -4548,13 +3484,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
 						" usbprop: %d-1000 require: 0.0-0.8", USLEEPMIN);
 		}
-		else
-		{
-			snprintf(replybuf, siz, "reset freq: 0-1200 chip: N:0-800 target: 0-1200"
-						" lockfreq unlockfreq waitfactor: 0.01-2.0"
-						" require: 0.0-0.8");
-		}
-                return replybuf;
+        return replybuf;
 	}
 
 	if (strcasecmp(option, "reset") == 0)
@@ -4576,7 +3506,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		freq = limit_freq(info, atof(setting), true);
 		freq = FREQ_BASE(freq);
 
-		change_freq_any(compac, freq);
+		change_freq_any(bm1397, freq);
 
 		return NULL;
 	}
@@ -4592,13 +3522,6 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 			snprintf(replybuf, siz, "missing chip:freq");
 			return replybuf;
 		}
-
-		if (info->asic_type != BM1397)
-		{
-			snprintf(replybuf, siz, "chip:freq only valid for BM1397");
-			return replybuf;
-		}
-
 		fpos = strchr(setting, ':');
 		if (!fpos || fpos == setting || *(fpos+1) == '\0')
 		{
@@ -4617,7 +3540,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		freq = limit_freq(info, atof(fpos+1), true);
 		freq = FREQ_BASE(freq);
 
-		calc_gsf_freq(compac, freq, chip);
+		calc_gsf_freq(bm1397, freq, chip);
 
 		return NULL;
 	}
@@ -4662,7 +3585,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 
 		info->wait_factor0 = freqbounding(atof(setting), 0.01, 2.0);
-		compac_update_rates(compac);
+		compac_update_rates(bm1397);
 
 		return NULL;
 	}
@@ -4670,12 +3593,6 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	// set work propagation time
 	if (strcasecmp(option, "usbprop") == 0)
 	{
-		if (info->asic_type != BM1397)
-		{
-			snprintf(replybuf, siz, "usbprop only for BM1397");
-			return replybuf;
-		}
-
 		if (!setting || !*setting)
 		{
 			snprintf(replybuf, siz, "missing usec");
@@ -4697,7 +3614,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 
 		info->ghrequire = freqbounding(atof(setting), 0.0, 0.8);
-		compac_update_rates(compac);
+		compac_update_rates(bm1397);
 
 		return NULL;
 	}
@@ -4706,15 +3623,18 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	return replybuf;
 }
 
+/** **************************************************** **/
+/**  Device driver **/
+/** **************************************************** **/
 struct device_drv bm1397_drv = {
 	.drv_id              = DRIVER_bm1397,
 	.dname               = "bm1397",
 	.name                = "H97",
-	.hash_work           = hash_queued_work,
-	.get_api_stats       = compac_api_stats,
-	.get_statline_before = compac_statline,
-	.set_device	     	 = compac_api_set,
-	.drv_detect          = compac_detect,
+	.hash_work           = hash_queued_work,  // defined in cgminer.c
+	.get_api_stats       = bm1397_api_stats,
+	.get_statline_before = bm1397_statline,
+	.set_device	     	 = bm1397_api_set,
+	.drv_detect          = bm1397_detect,
 	.scanwork            = compac_scanwork,
 	.flush_work          = compac_flush_work,
 	.update_work         = compac_update_work,

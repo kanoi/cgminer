@@ -68,5 +68,5 @@ cgminer_SOURCES += driver-gekko.c driver-gekko.h
 endif
 
 if HAS_BM1397
-cgminer_SOURCES += driver-bm1397.c driver-bm1397.h
+cgminer_SOURCES += driver-bm1397.c driver-bm1397.h driver_bm1397_utils.c driver_bm1397_utils.h
 endif
