@@ -101,9 +101,9 @@ static void gekko_usleep(struct COMPAC_INFO *info, int sleep_duration_us)
 	{
 		cgsleep_ms(sleep_duration_us / 1000); // Sleep in milliseconds
 #if TUNE_CODE
-		mutex_lock(&info->slock);
+		mutex_lock(&info->mutex_usleep_stats_lock);
 		info->inv++; // Increment inv
-		mutex_unlock(&info->slock);
+		mutex_unlock(&info->mutex_usleep_stats_lock);
 #endif
 		return;
 	}
@@ -120,7 +120,7 @@ static void gekko_usleep(struct COMPAC_INFO *info, int sleep_duration_us)
 	d_fac_us = (d_time_diff_us / (double)sleep_duration_us);
 
 	// Update info structure
-	mutex_lock(&info->slock);
+	mutex_lock(&info->mutex_usleep_stats_lock);
 	if (d_time_diff_us < sleep_duration_us) {
 		info->num0++;
 	}
@@ -143,7 +143,7 @@ static void gekko_usleep(struct COMPAC_INFO *info, int sleep_duration_us)
 		info->fac += d_fac_us;
 		info->num++;
 	}
-	mutex_unlock(&info->slock);
+	mutex_unlock(&info->mutex_usleep_stats_lock);
 #endif
 }
 
@@ -189,6 +189,21 @@ uint32_t bmcrc(unsigned char *ptu8_input_data, uint32_t u32_data_lenght)
 	return (c[4] * 0x10) | (c[3] * 0x08) | (c[2] * 0x04) | (c[1] * 0x02) | (c[0] * 0x01);
 }
 
+
+/**
+ * @brief Dumps the content of the provided buffer to the log with a specified log level and an optional note.
+ *
+ * This function formats the content of the buffer into a human-readable hexadecimal string and writes it to the log.
+ * Each line of the log output contains a chunk of the buffer data. The function logs the content of the buffer
+ * if the specified log level is less than or equal to the current logging level or if the `opt_log_output` flag is set.
+ * The buffer data is truncated to a maximum length of 768 bytes in the log output.
+ *
+ * @param bm1397 Pointer to the `cgpu_info` struct representing the BM1397 device whose buffer is being dumped.
+ * @param LOG_LEVEL The log level for the log entry.
+ * @param note A pointer to an optional string to be included as a note in the log entry.
+ * @param ptr Pointer to the buffer whose content is to be dumped to the log.
+ * @param len Length of the buffer in bytes.
+ */
 void dumpbuffer(struct cgpu_info *bm1397, int LOG_LEVEL, char *note, unsigned char *ptr, uint32_t len)
 {
 	if (opt_log_output || LOG_LEVEL <= opt_log_level) {
@@ -215,7 +230,6 @@ void dumpbuffer(struct cgpu_info *bm1397, int LOG_LEVEL, char *note, unsigned ch
 	}
 }
 
-#define compac_send(_c, _r, _b, _crc) compac_send2(_c, _r, _b, _crc, NULL)
 static void compac_send2(struct cgpu_info *bm1397, unsigned char *req_tx, uint32_t bytes, uint32_t crc_bits, __maybe_unused char *msg)
 {
 	struct COMPAC_INFO *info = bm1397->device_data;
@@ -2681,7 +2695,7 @@ static bool compac_init(struct thr_info *thr)
 
 		if (info->ident == IDENT_GSF || info->ident == IDENT_GSFM)
 		{
-			info->nlist = k_new_list("GekkoNonces", sizeof(struct COMPAC_NONCE),
+			info->nlist = k_new_list("GekkoNonces", sizeof(struct S_COMPAC_NONCE),
 						ALLOC_NLIST_ITEMS, LIMIT_NLIST_ITEMS, true);
 			info->nstore = k_new_store(info->nlist);
 		}
@@ -2892,7 +2906,7 @@ static struct cgpu_info *bm1397_detect_one(struct libusb_device *dev, struct usb
 	info = cgcalloc(1, sizeof(struct COMPAC_INFO));
 
 #if TUNE_CODE
-	pthread_mutex_init(&info->slock, NULL);
+	pthread_mutex_init(&info->mutex_usleep_stats_lock, NULL);
 #endif
 
 	bm1397->device_data = (void *)info;
@@ -3261,7 +3275,7 @@ static struct api_data *bm1397_api_stats(struct cgpu_info *bm1397)
 	root = api_add_uint64(root, "NTrigger", &info->ntrigger, false);
 
 #if TUNE_CODE
-	mutex_lock(&info->slock);
+	mutex_lock(&info->mutex_usleep_stats_lock);
 	uint64_t num = info->num;
 	double req = info->req;
 	double fac = info->fac;
@@ -3272,7 +3286,7 @@ static struct api_data *bm1397_api_stats(struct cgpu_info *bm1397)
 	double req1_5 = info->req1_5;
 	double fac1_5 = info->fac1_5;
 	uint64_t inv = info->inv;
-	mutex_unlock(&info->slock);
+	mutex_unlock(&info->mutex_usleep_stats_lock);
 
 	double avg, res, avg1_1, res1_1, avg1_5, res1_5;
 

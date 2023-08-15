@@ -133,7 +133,7 @@ struct S_ASIC_INFO {
 	struct S_BM1397_CHIP s_bm1397_chip;	// running nonce buffer
 };
 
-struct COMPAC_NONCE
+struct S_COMPAC_NONCE
 {
 	int32_t i32_asic;
 	unsigned char tu8_rx_buffer[BUFFER_MAX];
@@ -142,7 +142,7 @@ struct COMPAC_NONCE
 	struct timeval s_tv_when;
 };
 
-#define DATA_NONCE(_item) ((struct COMPAC_NONCE *)(_item->data))
+#define DATA_NONCE(_item) ((struct S_COMPAC_NONCE *)(_item->data))
 #define ALLOC_NLIST_ITEMS 256
 #define LIMIT_NLIST_ITEMS 0
 
@@ -425,14 +425,18 @@ struct COMPAC_INFO {
 	pthread_mutex_t joblock;		// Mutex for all access to jb
 	struct GEKKOJOB job;			// running job rate buffer
 
-	pthread_mutex_t slock;			// usleep() stats
+	// Usleep() stats (for tuning)
+	pthread_mutex_t mutex_usleep_stats_lock;			// usleep() stats
 	uint64_t num0;
+
 	uint64_t num;
 	double req;
 	double fac;
+
 	uint64_t num1_1;
 	double req1_1;
 	double fac1_1;
+
 	uint64_t num1_5;
 	double req1_5;
 	double fac1_5;
