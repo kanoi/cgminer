@@ -151,7 +151,7 @@ static int cur_attempt[] = { 0, -4, -8, -12 };
 #define CUR_ATTEMPT (sizeof(cur_attempt)/sizeof(int))
 
 // macro to adjust frequency choices to be an integer multple of info->freq_base
-#define FREQ_BASE(_f) (ceil((float)(_f) / info->freq_base) * info->freq_base)
+#define FREQ_BASE(_f) (ceil((float)(_f) / s_bm1397_info->freq_base) * s_bm1397_info->freq_base)
 
 // macro to add/subtract from the job_id but roll in the min...max range
 #define JOB_ID_ROLL(_jid, _add, _info) \
@@ -261,7 +261,7 @@ struct GEKKOJOB
 	int last;
 };
 
-struct COMPAC_INFO {
+struct S_BM1397_INFO {
 
 	enum sub_ident ident;		// Miner identity
 	enum miner_state mining_state;	// Miner state
