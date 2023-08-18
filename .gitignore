@@ -96,3 +96,12 @@ compat/jansson-2.9/*
 compat/jansson-2.9/test-driver
 compat/jansson-2.9/jansson_private_config.h.in
 compat/jansson-2.9/test-driver
+build_yocto/compat/jansson-2.9/arm-poky-linux-gnueabi-libtool
+build_yocto/compat/jansson-2.9/jansson_private_config.h
+build_yocto/compat/jansson-2.9/src/jansson_config.h
+build_yocto/lib/arg-nonnull.h
+build_yocto/lib/c++defs.h
+build_yocto/lib/signal.h
+build_yocto/lib/string.h
+build_yocto/lib/warn-on-use.h
+compat/jansson-2.9/jansson_private_config.h.in
