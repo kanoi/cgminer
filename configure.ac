@@ -189,7 +189,7 @@ fi
 
 
 #Add a new device to this list if it needs libusb, along with a no on the end.
-if test x$gekko$bm1397 != xnono; then
+if test x$gekko != xno; then
 	want_usbutils=true
 else
 	want_usbutils=false

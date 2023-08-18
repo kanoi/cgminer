@@ -1,6 +1,5 @@
 #include "math.h"
 #include "miner.h"
-#include "usbutils.h"
 #include "uart_utils.h"
 #include "klist.h"
 

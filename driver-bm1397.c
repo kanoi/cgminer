@@ -256,7 +256,7 @@ static void compac_send2(struct cgpu_info *cgpu_bm1397, unsigned char *req_tx, u
 	int log_level = (bytes < s_bm1397_info->task_len) ? LOG_INFO : LOG_INFO;
 
 	dumpbuffer(cgpu_bm1397, log_level, "TX", s_bm1397_info->cmd, bytes);
-	usb_write(cgpu_bm1397, (char *)(s_bm1397_info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
+	//usb_write(cgpu_bm1397, (char *)(s_bm1397_info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
 	//let the usb frame propagate
 	if (s_bm1397_info->asic_type == BM1397) {
 		gekko_usleep(s_bm1397_info, s_bm1397_info->usb_prop);
@@ -1111,8 +1111,9 @@ static void compac_send_chain_inactive(struct cgpu_info *cgpu_bm1397)
 		compac_send2(cgpu_bm1397, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
 		gekko_usleep(s_bm1397_info, MS2US(10));
 
-		usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, s_bm1397_info->bauddiv + 1,
-				(FTDI_INDEX_BAUD_BTS & 0xff00) | s_bm1397_info->interface, C_SETBAUD);
+		//TODO change baudrate here
+		//usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, s_bm1397_info->bauddiv + 1,
+		//		(FTDI_INDEX_BAUD_BTS & 0xff00) | s_bm1397_info->interface, C_SETBAUD);
 		gekko_usleep(s_bm1397_info, MS2US(10));
 
 		calc_gsf_freq(cgpu_bm1397, s_bm1397_info->frequency, -1);
@@ -1243,7 +1244,8 @@ static void compac_flush_buffer(struct cgpu_info *cgpu_bm1397)
 	unsigned char resp[32];
 
 	while (read_bytes) {
-		usb_read_timeout(cgpu_bm1397, (char *)resp, 32, &read_bytes, 1, C_REQUESTRESULTS);
+		//TODO Flush UART buffer here
+		//usb_read_timeout(cgpu_bm1397, (char *)resp, 32, &read_bytes, 1, C_REQUESTRESULTS);
 	}
 }
 
@@ -1265,24 +1267,24 @@ static void compac_toggle_reset(struct cgpu_info *cgpu_bm1397)
 	// toggle gpio reset pin to reset ASIC
 	int fd;
 
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_RESET, s_bm1397_info->interface, C_RESET);
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_DATA, FTDI_VALUE_DATA_BTS, s_bm1397_info->interface, C_SETDATA);
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, FTDI_VALUE_BAUD_BTS, (FTDI_INDEX_BAUD_BTS & 0xff00) | s_bm1397_info->interface, C_SETBAUD);
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_FLOW, FTDI_VALUE_FLOW, s_bm1397_info->interface, C_SETFLOW);
+	//usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_RESET, s_bm1397_info->interface, C_RESET);
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_DATA, FTDI_VALUE_DATA_BTS, s_bm1397_info->interface, C_SETDATA);
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BAUD, FTDI_VALUE_BAUD_BTS, (FTDI_INDEX_BAUD_BTS & 0xff00) | s_bm1397_info->interface, C_SETBAUD);
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_FLOW, FTDI_VALUE_FLOW, s_bm1397_info->interface, C_SETFLOW);
 
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_TX, s_bm1397_info->interface, C_PURGETX);
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_RX, s_bm1397_info->interface, C_PURGERX);
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_TX, s_bm1397_info->interface, C_PURGETX);
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_RESET, FTDI_VALUE_PURGE_RX, s_bm1397_info->interface, C_PURGERX);
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
 	gekko_usleep(s_bm1397_info, MS2US(30));
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF0; // low byte: bitmask - 1111 0000 - CB1(LO)
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF0; // low byte: bitmask - 1111 0000 - CB1(LO)
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
 	gekko_usleep(s_bm1397_info, MS2US(1000));
 
-	usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
-	usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
+	// usb_val = (FTDI_BITMODE_CBUS << 8) | 0xF2; // low byte: bitmask - 1111 0010 - CB1(HI)
+	// usb_transfer(cgpu_bm1397, FTDI_TYPE_OUT, FTDI_REQUEST_BITMODE, usb_val, s_bm1397_info->interface, C_SETMODEM);
 	gekko_usleep(s_bm1397_info, MS2US(200));
 
 	cgtime(&s_bm1397_info->last_reset);
@@ -2388,7 +2390,7 @@ static void *compac_listen2(struct cgpu_info *cgpu_bm1397, struct S_BM1397_INFO 
 			tmo = 1000;
 		}
 
-		usb_read_timeout(cgpu_bm1397, ((char *)tu8_rx_buffer)+pos, BUFFER_MAX-pos, &read_bytes, tmo, C_GETRESULTS);
+		//usb_read_timeout(cgpu_bm1397, ((char *)tu8_rx_buffer)+pos, BUFFER_MAX-pos, &read_bytes, tmo, C_GETRESULTS);
 		pos += read_bytes;
 
 		cgtime(&now);

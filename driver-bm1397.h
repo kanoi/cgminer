@@ -11,7 +11,7 @@
 
 #include "math.h"
 #include "miner.h"
-#include "usbutils.h"
+
 #include "uart_utils.h"
 #include "klist.h"
 
@@ -259,6 +259,11 @@ struct GEKKOJOB
 	int jobsnum;
 	// last used offset 0 based
 	int last;
+};
+
+enum sub_ident {
+	IDENT_GSF,
+	IDENT_GSFM
 };
 
 struct S_BM1397_INFO {
