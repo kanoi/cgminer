@@ -23,6 +23,15 @@
             },
         },
         {
+            "label": "Build Yocto",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/build_yocto.sh",
+            "group": "build",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+        },
+        {
             "label": "Build armv7",
             "type": "shell",
             "command": "${workspaceFolder}/scripts/build_target.sh",
