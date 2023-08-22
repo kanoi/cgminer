@@ -230,33 +230,34 @@ void dumpbuffer(struct cgpu_info *cgpu_bm1397, int LOG_LEVEL, char *note, unsign
 	}
 }
 
-static void compac_send2(struct cgpu_info *cgpu_bm1397, unsigned char *req_tx, uint32_t bytes, uint32_t crc_bits, __maybe_unused char *msg)
+static void hashboard_send(struct cgpu_info *cgpu_bm1397, unsigned char *req_tx, uint32_t bytes_buffer_lenght, uint32_t crc_bits, __maybe_unused char *msg)
 {
 	struct S_BM1397_INFO *s_bm1397_info = cgpu_bm1397->device_data;
 	int read_bytes = 1;
 	unsigned int i, off = 0;
 
 	// leave original buffer intact
-
 	if (s_bm1397_info->asic_type == BM1397)
 	{
-		s_bm1397_info->cmd[0] = 0x55;
-		s_bm1397_info->cmd[1] = 0xAA;
+		s_bm1397_info->cmd[0] = BM1397_HEADER_1;
+		s_bm1397_info->cmd[1] = BM1397_HEADER_2;
 		off = 2;
 	}
 
-	for (i = 0; i < bytes; i++) {
+	// Copy the req_tx buffer into the cmd buffer
+	for (i = 0; i < bytes_buffer_lenght; i++) {
 		s_bm1397_info->cmd[i+off] = req_tx[i];
 	}
 
-	bytes += off;
+	bytes_buffer_lenght += off;
 
-	s_bm1397_info->cmd[bytes-1] |= bmcrc(req_tx, crc_bits);
+	s_bm1397_info->cmd[bytes_buffer_lenght-1] |= bmcrc(req_tx, crc_bits);
 
-	int log_level = (bytes < s_bm1397_info->task_len) ? LOG_INFO : LOG_INFO;
+	int log_level = (bytes_buffer_lenght < s_bm1397_info->task_len) ? LOG_INFO : LOG_INFO;
 
-	dumpbuffer(cgpu_bm1397, log_level, "TX", s_bm1397_info->cmd, bytes);
-	//usb_write(cgpu_bm1397, (char *)(s_bm1397_info->cmd), bytes, &read_bytes, C_REQUESTRESULTS);
+	dumpbuffer(cgpu_bm1397, log_level, "TX", s_bm1397_info->cmd, bytes_buffer_lenght);
+	uart_write(cgpu_bm1397, (char *)(s_bm1397_info->cmd), bytes_buffer_lenght, &read_bytes);
+	//usb_write(cgpu_bm1397, (char *)(s_bm1397_info->cmd), bytes_buffer_lenght, &read_bytes, C_REQUESTRESULTS);
 	//let the usb frame propagate
 	if (s_bm1397_info->asic_type == BM1397) {
 		gekko_usleep(s_bm1397_info, s_bm1397_info->usb_prop);
@@ -291,9 +292,10 @@ static void ping_freq(struct cgpu_info *cgpu_bm1397, int i32_asic)
 	bool ping = false;
 
 	if (s_bm1397_info->asic_type == BM1397)
-	{
-		unsigned char pingall[] = {0x52, 0x05, 0x00, BM1397FREQ, 0x00};
-		compac_send2(cgpu_bm1397, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
+	{	
+
+		unsigned char pingall[] = {BM1397_CHAIN_READ_REG, 0x05, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL0, BM1397_CRC5_PLACEHOLDER};
+		hashboard_send(cgpu_bm1397, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
 		ping = true;
 	}
 
@@ -839,11 +841,16 @@ static void set_ticket(struct cgpu_info *cgpu_bm1397, float diff, bool force, bo
 	if (!got)
 		return;
 
-	// set them all the same 0x51 .... 0x00
-	unsigned char ticket[] = {0x51, 0x09, 0x00, BM1397TICKET, 0x00, 0x00, 0x00, 0xC0, 0x00};
+	unsigned char ticket[] = {	BM1397_CHAIN_WRITE_REG,
+							 	0x09,
+							 	BM1397_DEFAULT_CHIP_ADDR,
+								BM1397_TICKET_MASK,
+								0x00, 0x00, 0x00, 0xC0,
+								BM1397_CRC5_PLACEHOLDER};
+
 	ticket[7] = s_bm1397_info->ticket_mask;
 
-	compac_send2(cgpu_bm1397, ticket, sizeof(ticket), 8 * sizeof(ticket) - 8, "ticket");
+	hashboard_send(cgpu_bm1397, ticket, sizeof(ticket), 8 * sizeof(ticket) - 8, "ticket");
 	if (!force)
 		gekko_usleep(s_bm1397_info, MS2US(10));
 	else
@@ -912,12 +919,12 @@ static void calc_gsf_freq(struct cgpu_info *cgpu_bm1397, float frequency, int ch
 		return;
 	}
 
-	unsigned char prefreqall[] = {0x51, 0x09, 0x00, 0x70, 0x0F, 0x0F, 0x0F, 0x00, 0x00};
-	unsigned char prefreqch[] = {0x41, 0x09, 0x00, 0x70, 0x0F, 0x0F, 0x0F, 0x00, 0x00};
+	unsigned char prefreqall[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL0_DIVIDER, 0x0F, 0x0F, 0x0F, 0x00, BM1397_CRC5_PLACEHOLDER};
+	unsigned char prefreqch[] = {BM1397_SINGLE_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL0_DIVIDER, 0x0F, 0x0F, 0x0F, 0x00, BM1397_CRC5_PLACEHOLDER};
 
 	// default 200Mhz if it fails
-	unsigned char freqbufall[] = {0x51, 0x09, 0x00, BM1397FREQ, 0x40, 0xF0, 0x02, 0x35, 0x00};
-	unsigned char freqbufch[] = {0x41, 0x09, 0x00, BM1397FREQ, 0x40, 0xF0, 0x02, 0x35, 0x00};
+	unsigned char freqbufall[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL0, 0x40, 0xF0, 0x02, 0x35, BM1397_CRC5_PLACEHOLDER};
+	unsigned char freqbufch[] = {BM1397_SINGLE_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL0, 0x40, 0xF0, 0x02, 0x35, BM1397_CRC5_PLACEHOLDER};
 
 	float deffreq = 200.0;
 
@@ -997,12 +1004,12 @@ static void calc_gsf_freq(struct cgpu_info *cgpu_bm1397, float frequency, int ch
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(s_bm1397_info, MS2US(10));
-			compac_send2(cgpu_bm1397, prefreqall, sizeof(prefreqall), 8 * sizeof(prefreqall) - 8, "prefreq");
+			hashboard_send(cgpu_bm1397, prefreqall, sizeof(prefreqall), 8 * sizeof(prefreqall) - 8, "prefreq");
 		}
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(s_bm1397_info, MS2US(10));
-			compac_send2(cgpu_bm1397, freqbufall, sizeof(freqbufall), 8 * sizeof(freqbufall) - 8, "freq");
+			hashboard_send(cgpu_bm1397, freqbufall, sizeof(freqbufall), 8 * sizeof(freqbufall) - 8, "freq");
 		}
 
 		// the freq wanted, which 'should' be the same
@@ -1020,12 +1027,12 @@ static void calc_gsf_freq(struct cgpu_info *cgpu_bm1397, float frequency, int ch
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(s_bm1397_info, MS2US(10));
-			compac_send2(cgpu_bm1397, prefreqch, sizeof(prefreqch), 8 * sizeof(prefreqch) - 8, "prefreq");
+			hashboard_send(cgpu_bm1397, prefreqch, sizeof(prefreqch), 8 * sizeof(prefreqch) - 8, "prefreq");
 		}
 		for (i = 0; i < 2; i++)
 		{
 			gekko_usleep(s_bm1397_info, MS2US(10));
-			compac_send2(cgpu_bm1397, freqbufch, sizeof(freqbufch), 8 * sizeof(freqbufch) - 8, "freq");
+			hashboard_send(cgpu_bm1397, freqbufch, sizeof(freqbufch), 8 * sizeof(freqbufch) - 8, "freq");
 		}
 
 		// the freq wanted, which 'should' be the same
@@ -1060,55 +1067,55 @@ static void compac_send_chain_inactive(struct cgpu_info *cgpu_bm1397)
 	if (s_bm1397_info->asic_type == BM1397)
 	{
 		// chain inactive
-		unsigned char chainin[5] = {0x53, 0x05, 0x00, 0x00, 0x00};
+		unsigned char chainin[5] = {BM1397_CHAIN_INACTIVE, 0x05, 0x00, 0x00, BM1397_CRC5_PLACEHOLDER};
 		for (i = 0; i < 3; i++)
 		{
-			compac_send2(cgpu_bm1397, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
+			hashboard_send(cgpu_bm1397, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
 			gekko_usleep(s_bm1397_info, MS2US(100));
 		}
 
-		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
+		unsigned char chippy[] = {BM1397_SET_CHIP_ADDR, 0x05, BM1397_DEFAULT_CHIP_ADDR, 0x00, BM1397_CRC5_PLACEHOLDER};
 		for (i = 0; i < s_bm1397_info->chips; i++)
 		{
 			chippy[2] = CHIPPY1397(s_bm1397_info, i);
-			compac_send2(cgpu_bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
+			hashboard_send(cgpu_bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
 			gekko_usleep(s_bm1397_info, MS2US(10));
 		}
 
-		unsigned char init1[] = {0x51, 0x09, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00};
-		unsigned char init2[] = {0x51, 0x09, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00};
-		unsigned char init3[] = {0x51, 0x09, 0x00, 0x20, 0x00, 0x00, 0x00, 0x01, 0x00};
-		unsigned char init4[] = {0x51, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x80, 0x74, 0x00};
+		unsigned char init1[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_CLOCK_ORDER_CONTROL0, 0x00, 0x00, 0x00, 0x00, BM1397_CRC5_PLACEHOLDER};
+		unsigned char init2[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_CLOCK_ORDER_CONTROL1, 0x00, 0x00, 0x00, 0x00, BM1397_CRC5_PLACEHOLDER};
+		unsigned char init3[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_ORDERED_CLOCK_ENABLE, 0x00, 0x00, 0x00, 0x01, BM1397_CRC5_PLACEHOLDER};
+		unsigned char init4[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_CORE_REGISTER_CONTROL, 0x80, 0x00, 0x80, 0x74, BM1397_CRC5_PLACEHOLDER};
 
-		compac_send2(cgpu_bm1397, init1, sizeof(init1), 8 * sizeof(init1) - 8, "init1");
+		hashboard_send(cgpu_bm1397, init1, sizeof(init1), 8 * sizeof(init1) - 8, "init1");
 		gekko_usleep(s_bm1397_info, MS2US(10));
-		compac_send2(cgpu_bm1397, init2, sizeof(init2), 8 * sizeof(init2) - 8, "init2");
+		hashboard_send(cgpu_bm1397, init2, sizeof(init2), 8 * sizeof(init2) - 8, "init2");
 		gekko_usleep(s_bm1397_info, MS2US(100));
-		compac_send2(cgpu_bm1397, init3, sizeof(init3), 8 * sizeof(init3) - 8, "init3");
+		hashboard_send(cgpu_bm1397, init3, sizeof(init3), 8 * sizeof(init3) - 8, "init3");
 		gekko_usleep(s_bm1397_info, MS2US(50));
-		compac_send2(cgpu_bm1397, init4, sizeof(init4), 8 * sizeof(init4) - 8, "init4");
+		hashboard_send(cgpu_bm1397, init4, sizeof(init4), 8 * sizeof(init4) - 8, "init4");
 		gekko_usleep(s_bm1397_info, MS2US(100));
 
 		// set ticket based on chips, pool will be above this anyway
 		set_ticket(cgpu_bm1397, 0.0, true, false);
 
-		unsigned char init5[] = {0x51, 0x09, 0x00, 0x68, 0xC0, 0x70, 0x01, 0x11, 0x00};
-		unsigned char init6[] = {0x51, 0x09, 0x00, 0x28, 0x06, 0x00, 0x00, 0x0F, 0x00};
+		unsigned char init5[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_PLL3_PARAMETER, 0xC0, 0x70, 0x01, 0x11, BM1397_CRC5_PLACEHOLDER};
+		unsigned char init6[] = {BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_FAST_UART_CONFIG, 0x06, 0x00, 0x00, 0x0F, BM1397_CRC5_PLACEHOLDER};
 
 		for (j = 0; j < 2; j++)
 		{
-			compac_send2(cgpu_bm1397, init5, sizeof(init5), 8 * sizeof(init5) - 8, "init5");
+			hashboard_send(cgpu_bm1397, init5, sizeof(init5), 8 * sizeof(init5) - 8, "init5");
 			gekko_usleep(s_bm1397_info, MS2US(50));
 		}
-		compac_send2(cgpu_bm1397, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
+		hashboard_send(cgpu_bm1397, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
 		gekko_usleep(s_bm1397_info, MS2US(100));
 
-		unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x18, 0x00, 0x00, 0x61, 0x31, 0x00 }; // lo 1.51M
+		unsigned char baudrate[] = { BM1397_CHAIN_WRITE_REG, 0x09, BM1397_DEFAULT_CHIP_ADDR, BM1397_MISC_CONTROL, 0x00, 0x00, 0x61, 0x31, BM1397_CRC5_PLACEHOLDER }; // lo 1.51M
 		s_bm1397_info->bauddiv = 1; // 1.5M
 
 		applog(LOG_ERR, "%d: %s %d - setting bauddiv : %02x %02x (ftdi/%d)",
 			cgpu_bm1397->cgminer_id, cgpu_bm1397->drv->name, cgpu_bm1397->device_id, baudrate[5], baudrate[6], s_bm1397_info->bauddiv + 1);
-		compac_send2(cgpu_bm1397, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
+		hashboard_send(cgpu_bm1397, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
 		gekko_usleep(s_bm1397_info, MS2US(10));
 
 		//TODO change baudrate here
@@ -2383,8 +2390,8 @@ static void *compac_listen2(struct cgpu_info *cgpu_bm1397, struct S_BM1397_INFO 
 
 		if (s_bm1397_info->mining_state == MINER_CHIP_COUNT)
 		{
-			unsigned char chippy[] = {0x52, 0x05, 0x00, 0x00, 0x0A};
-			compac_send2(cgpu_bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "CHIPPY");
+			unsigned char chippy[] = {BM1397_CHAIN_READ_REG, 0x05, BM1397_DEFAULT_CHIP_ADDR, BM1397_CHIP_ADDR, 0x0A};
+			hashboard_send(cgpu_bm1397, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "CHIPPY");
 			s_bm1397_info->mining_state = MINER_CHIP_COUNT_XX;
 			// initial config reply allow much longer
 			tmo = 1000;
@@ -2455,14 +2462,14 @@ static void *compac_listen2(struct cgpu_info *cgpu_bm1397, struct S_BM1397_INFO 
 				chipped = false;
 				if (tu8_rx_buffer[2] == 0x13 && tu8_rx_buffer[3] == 0x97)
 				{
-					struct S_ASIC_INFO *i32_asic = &s_bm1397_info->asics[s_bm1397_info->chips];
-					memset(i32_asic, 0, sizeof(struct S_ASIC_INFO));
-					i32_asic->f_frequency = s_bm1397_info->frequency_default;
-					i32_asic->u32_frequency_attempt = 0;
-					i32_asic->s_tv_last_frequency_ping = (struct timeval){0};
-					i32_asic->f_frequency_reply = -1;
-					i32_asic->s_tv_last_frequency_reply = (struct timeval){0};
-					cgtime(&i32_asic->s_tv_last_nonce);
+					struct S_ASIC_INFO *s_asic_info = &s_bm1397_info->asics[s_bm1397_info->chips];
+					memset(s_asic_info, 0, sizeof(struct S_ASIC_INFO));
+					s_asic_info->f_frequency = s_bm1397_info->frequency_default;
+					s_asic_info->u32_frequency_attempt = 0;
+					s_asic_info->s_tv_last_frequency_ping = (struct timeval){0};
+					s_asic_info->f_frequency_reply = -1;
+					s_asic_info->s_tv_last_frequency_reply = (struct timeval){0};
+					cgtime(&s_asic_info->s_tv_last_nonce);
 					s_bm1397_info->chips++;
 					s_bm1397_info->mining_state = MINER_CHIP_COUNT_XX;
 					compac_update_rates(cgpu_bm1397);
