@@ -106,7 +106,8 @@ char *WSAErrorMsg(void) {
 		if (WSAErrors[i].id == id)
 			break;
 
-	sprintf(WSAbuf, "Socket Error: (%d) %s", id, WSAErrors[i].code);
+	snprintf(WSAbuf, sizeof(WSAbuf),
+		"Socket Error: (%d) %s", id, WSAErrors[i].code);
 
 	return &(WSAbuf[0]);
 }
@@ -1472,7 +1473,7 @@ static void message(struct io_data *io_data, int messageid, int paramid, char *p
 	root = api_add_time(root, "When", &when, false);
 	int id = -1;
 	root = api_add_int(root, "Code", &id, false);
-	sprintf(buf, "%d", messageid);
+	snprintf(buf, sizeof(buf), "%d", messageid);
 	root = api_add_escape(root, "Msg", buf, false);
 	root = api_add_escape(root, "Description", opt_api_description, false);
 
@@ -1982,7 +1983,7 @@ static void ascstatus(struct io_data *io_data, int asc, bool isjson, bool precom
 		double mhs = cgpu->total_mhashes / dev_runtime;
 		root = api_add_mhs(root, "MHS av", &mhs, false);
 		char mhsname[27];
-		sprintf(mhsname, "MHS %ds", opt_log_interval);
+		snprintf(mhsname, sizeof(mhsname), "MHS %ds", opt_log_interval);
 		root = api_add_mhs(root, mhsname, &(cgpu->rolling), false);
 		root = api_add_mhs(root, "MHS 1m", &cgpu->rolling1, false);
 		root = api_add_mhs(root, "MHS 5m", &cgpu->rolling5, false);
@@ -2069,7 +2070,7 @@ static void pgastatus(struct io_data *io_data, int pga, bool isjson, bool precom
 		double mhs = cgpu->total_mhashes / dev_runtime;
 		root = api_add_mhs(root, "MHS av", &mhs, false);
 		char mhsname[27];
-		sprintf(mhsname, "MHS %ds", opt_log_interval);
+		snprintf(mhsname, sizeof(mhsname), "MHS %ds", opt_log_interval);
 		root = api_add_mhs(root, mhsname, &(cgpu->rolling), false);
 		root = api_add_mhs(root, "MHS 1m", &cgpu->rolling1, false);
 		root = api_add_mhs(root, "MHS 5m", &cgpu->rolling5, false);
@@ -2563,7 +2564,7 @@ static void summary(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __mayb
 	root = api_add_elapsed(root, "Elapsed", &(total_secs), true);
 	root = api_add_mhs(root, "MHS av", &(mhs), false);
 	char mhsname[27];
-	sprintf(mhsname, "MHS %ds", opt_log_interval);
+	snprintf(mhsname, sizeof(mhsname),  "MHS %ds", opt_log_interval);
 	root = api_add_mhs(root, mhsname, &(total_rolling), false);
 	root = api_add_mhs(root, "MHS 1m", &rolling1, false);
 	root = api_add_mhs(root, "MHS 5m", &rolling5, false);
@@ -3280,7 +3281,7 @@ static void minerstats(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __m
 			else
 				extra = NULL;
 
-			sprintf(id, "%s%d", cgpu->drv->name, cgpu->device_id);
+			snprintf(id, sizeof(id), "%s%d", cgpu->drv->name, cgpu->device_id);
 			i = itemstats(io_data, i, id, &(cgpu->cgminer_stats), NULL, extra, cgpu, isjson);
 		}
 	}
@@ -3288,7 +3289,7 @@ static void minerstats(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __m
 	for (j = 0; j < total_pools; j++) {
 		struct pool *pool = pools[j];
 
-		sprintf(id, "POOL%d", j);
+		snprintf(id, sizeof(id), "POOL%d", j);
 		i = itemstats(io_data, i, id, &(pool->cgminer_stats), &(pool->cgminer_pool_stats), NULL, NULL, isjson);
 	}
 
@@ -3319,7 +3320,7 @@ static void minerdebug(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __m
 			else
 				extra = NULL;
 
-			sprintf(id, "%s%d", cgpu->drv->name, cgpu->device_id);
+			snprintf(id, sizeof(id), "%s%d", cgpu->drv->name, cgpu->device_id);
 			i = itemstats(io_data, i, id, &(cgpu->cgminer_stats), NULL, extra, cgpu, isjson);
 		}
 	}
@@ -3327,7 +3328,7 @@ static void minerdebug(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __m
 	for (j = 0; j < total_pools; j++) {
 		struct pool *pool = pools[j];
 
-		sprintf(id, "POOL%d", j);
+		snprintf(id, sizeof(id), "POOL%d", j);
 		i = itemstats(io_data, i, id, &(pool->cgminer_stats), &(pool->cgminer_pool_stats), NULL, NULL, isjson);
 	}
 
@@ -3374,7 +3375,7 @@ static void minerestats(struct io_data *io_data, __maybe_unused SOCKETTYPE c, __
 			else
 				extra = NULL;
 
-			sprintf(id, "%s%d", cgpu->drv->name, cgpu->device_id);
+			snprintf(id, sizeof(id), "%s%d", cgpu->drv->name, cgpu->device_id);
 			i = itemstats(io_data, i, id, &(cgpu->cgminer_stats), NULL, extra, cgpu, isjson);
 		}
 	}
@@ -4088,7 +4089,7 @@ static void checkcommand(struct io_data *io_data, __maybe_unused SOCKETTYPE c, c
 		if (strcmp(cmds[i].name, param) == 0) {
 			found = true;
 
-			sprintf(cmdbuf, "|%s|", param);
+			snprintf(cmdbuf, sizeof(cmdbuf), "|%s|", param);
 			if (ISPRIVGROUP(group) || strstr(COMMANDS(group), cmdbuf))
 				access = true;
 
@@ -4309,7 +4310,7 @@ static void setup_groups()
 				}
 				if (did) {
 					// skip duplicates
-					sprintf(cmdbuf, "|%s|", cmds[i].name);
+					snprintf(cmdbuf, sizeof(cmdbuf), "|%s|", cmds[i].name);
 					if (strstr(commands, cmdbuf) == NULL) {
 						strcpy(cmd, cmds[i].name);
 						cmd += strlen(cmds[i].name);
@@ -4329,7 +4330,7 @@ static void setup_groups()
 			for (i = 0; cmds[i].name != NULL; i++) {
 				if (cmds[i].iswritemode == false) {
 					// skip duplicates
-					sprintf(cmdbuf, "|%s|", cmds[i].name);
+					snprintf(cmdbuf, sizeof(cmdbuf), "|%s|", cmds[i].name);
 					if (strstr(commands, cmdbuf) == NULL) {
 						strcpy(cmd, cmds[i].name);
 						cmd += strlen(cmds[i].name);
@@ -4570,7 +4571,7 @@ static bool check_connect(struct sockaddr_storage *cli, char **connectaddr, char
 
 	// v4 mapped v6 address, such as "::ffff:255.255.255.255"
 	if (cli->ss_family == AF_INET) {
-		sprintf(tmp, "::ffff:%s", *connectaddr);
+		snprintf(tmp, sizeof(tmp), "::ffff:%s", *connectaddr);
 		INET_PTON(AF_INET6, tmp, &client_ip);
 	}
 	else
@@ -4629,7 +4630,7 @@ static void mcast()
 	char buf[1024];
 	char replybuf[1024];
 
-	sprintf(port_s, "%d", opt_api_mcast_port);
+	snprintf(port_s, sizeof(port_s), "%d", opt_api_mcast_port);
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	if (getaddrinfo(opt_api_mcast_addr, port_s, &hints, &res) != 0)
@@ -4887,7 +4888,7 @@ void api(int api_thr_id)
 	 * to ensure curl has already called WSAStartup() in windows */
 	cgsleep_ms(opt_log_interval*1000);
 
-	sprintf(port_s, "%d", port);
+	snprintf(port_s, sizeof(port_s), "%d", port);
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_PASSIVE;
 	hints.ai_family = AF_UNSPEC;
@@ -5039,10 +5040,12 @@ void api(int api_thr_id)
 								if (json_is_string(json_val))
 									param = (char *)json_string_value(json_val);
 								else if (json_is_integer(json_val)) {
-									sprintf(param_buf, "%d", (int)json_integer_value(json_val));
+									snprintf(param_buf, sizeof(param_buf),
+										"%d", (int)json_integer_value(json_val));
 									param = param_buf;
 								} else if (json_is_real(json_val)) {
-									sprintf(param_buf, "%f", (double)json_real_value(json_val));
+									snprintf(param_buf, sizeof(param_buf),
+										"%f", (double)json_real_value(json_val));
 									param = param_buf;
 								}
 							}
