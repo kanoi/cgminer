@@ -30,7 +30,7 @@ bin_PROGRAMS	= cgminer
 
 cgminer_LDFLAGS	= $(PTHREAD_FLAGS)
 cgminer_LDADD	= $(DLOPEN_FLAGS) @LIBCURL_LIBS@ @JANSSON_LIBS@ @LIBZ_LIBS@ @PTHREAD_LIBS@ \
-		  @NCURSES_LIBS@ @PDCURSES_LIBS@ @WS2_LIBS@ \
+		  @NCURSES_LIBS@ @PDCURSES_LIBS@ @WS2_LIBS@ @LIBGPIOD_LIBS \
 		  @LIBUSB_LIBS@ @MM_LIBS@ @RT_LIBS@ @LIBSYSTEMD_LIBS@ \
 		  @MATH_LIBS@ lib/libgnu.a ccan/libccan.a
 
@@ -55,6 +55,10 @@ cgminer_SOURCES	+= noncedup.c
 
 if WANT_USBUTILS
 cgminer_SOURCES += usbutils.c usbutils.h
+endif
+
+if WANT_UARTUTILS
+cgminer_SOURCES += uart_utils.c uart_utils.h
 endif
 
 if WANT_CRC16

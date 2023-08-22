@@ -230,6 +230,23 @@ else
 	LIBUSB_LIBS=""
 fi
 
+if test "x$want_gpiod" != xfalse; then
+	AC_DEFINE([USE_GPIOD], [1], [Defined to 1 if gpiod support required])
+	case $target in
+		*-*-freebsd*)
+			LIBGPIOD_LIBS="-lgpiod"
+			LIBGPIOD_CFLAGS=""
+			AC_DEFINE(HAVE_GPIOD, 1, [Define if you have libgpiod-dev])
+			;;
+		*)
+			AC_MSG_WARN("Checking for libgpiod-dev")
+			PKG_CHECK_EXISTS(LIBGPIOD, libgpiod, [AC_DEFINE(HAVE_GPIOD, 1, [Define if you have libgpiod-dev])], [AC_MSG_ERROR([Could not find gpiod library - please install libgpiod-dev])])
+			;;
+	esac
+else
+	LIBGPIOD_LIBS=""
+fi
+
 djansson="yes"
 case $target in
 	*-*-freebsd*)
@@ -265,6 +282,8 @@ fi
 
 AC_SUBST(LIBUSB_LIBS)
 AC_SUBST(LIBUSB_CFLAGS)
+AC_SUBST(LIBGPIOD_LIBS)
+AC_SUBST(LIBGPIOD_CFLAGS)
 
 AC_ARG_ENABLE([libcurl],
 	[AC_HELP_STRING([--disable-libcurl],[Disable building with libcurl for GBT support])],
@@ -430,7 +449,7 @@ echo "Compilation............: make (or gmake)"
 echo "  CPPFLAGS.............: $CPPFLAGS"
 echo "  CFLAGS...............: $CFLAGS"
 echo "  LDFLAGS..............: $LDFLAGS $PTHREAD_FLAGS"
-echo "  LDADD................: $DLOPEN_FLAGS $LIBCURL_LIBS $LIBSYSTEMD_LIBS $JANSSON_LIBS $LIBZ_LIBS $PTHREAD_LIBS $NCURSES_LIBS $PDCURSES_LIBS $WS2_LIBS $MATH_LIBS $LIBUSB_LIBS $RT_LIBS"
+echo "  LDADD................: $DLOPEN_FLAGS $LIBCURL_LIBS $LIBSYSTEMD_LIBS $JANSSON_LIBS $LIBZ_LIBS $PTHREAD_LIBS $NCURSES_LIBS $PDCURSES_LIBS $WS2_LIBS $MATH_LIBS $LIBUSB_LIBS $RT_LIBS $LIBGPIOD_LIBS"
 echo
 echo "Installation...........: make install (as root if needed, with 'su' or 'sudo')"
 echo "  prefix...............: $prefix"

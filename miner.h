@@ -148,6 +148,14 @@ static inline int fsync (int fd)
   #include "usbutils.h"
 #endif
 
+#ifdef USE_UART
+	#include "uart_utils.h"
+#endif
+
+#ifdef USE_GPIOD
+	#include <gpiod.h>
+#endif
+
 #if (!defined(WIN32) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 3))) \
     || (defined(WIN32) && ((__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 7)))
 #ifndef bswap_16
@@ -447,6 +455,9 @@ struct cgpu_info {
 	struct cg_usb_info usbinfo;
 	bool blacklisted;
 	bool nozlp; // Device prefers no zero length packet
+#endif
+#ifdef USE_UART
+	device_t *uart_device
 #endif
 	enum dev_enable deven;
 	int accepted;
