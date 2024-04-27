@@ -1,6 +1,7 @@
 nbproject
 .dirstamp
 .libs/
+patches-cgminer/*
 jansson.pc
 compat/jansson-2.9/src/jansson_config.h
 compat/jansson-2.9/jansson_private_config.h
