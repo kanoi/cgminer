@@ -4,11 +4,6 @@
 #include "config.h"
 
 #ifdef __GNUC__
-#ifdef __USE_FORTIFY_LEVEL
-#undef __USE_FORTIFY_LEVEL
-#endif
-// ignore n truncation warnings
-#define __USE_FORTIFY_LEVEL 1
 #if __GNUC__ >= 7
 // ignore the vast number of such non-bug warnings
 #pragma GCC diagnostic ignored "-Wunused-variable"
