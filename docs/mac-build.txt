@@ -1,0 +1,54 @@
+Building cgminer on MacOS using Brew - tested on Big Sur 11.16
+--------------------------------------------------------------
+
+Install Apple Command Line Tools:
+this can take 10 or more minutes to download from Apple
+
+ xcode-select --install
+
+Install Brew
+this should take about 5-10 minutes on a recent mac with MBit internet
+
+ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+ brew analytics off
+
+
+Build cgminer:
+
+ brew tap kanoi/cgminer
+ brew install cgminer
+
+
+If you already had brew installed, you should instead do the following steps:
+
+ brew analytics off
+ brew doctor
+ brew update
+ brew upgrade
+ brew cleanup
+ brew tap kanoi/cgminer
+ brew install cgminer
+
+To install minor updates to cgminer, if you already have upgraded everything
+
+ brew reinstall cgminer
+
+
+Accessing the API
+-----------------
+
+To access the API it is easiest to install Java
+	https://java.com/
+
+Ensure you have enabled the API e.g.
+	--api-enable --api-allow "W:127.0.0.1"
+
+Then in a terminal after installing and running cgminer:
+	cd Library/Caches/Homebrew/cgminer--git/
+	java API estats
+
+Older macs
+----------
+
+If you are running an older mac without proper multitasking,
+you may need to add the option --mac-yield when running cgminer with a gekko miner

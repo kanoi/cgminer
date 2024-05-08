@@ -1,0 +1,11 @@
+Install ubuntu 20.04
+when installed :
+sudo apt-get update -y
+sudo apt-get install git -y
+
+sudo ./make_environement.sh
+sudo reboot
+when reboot was finish :
+
+./build_gekko.sh
+
