@@ -463,6 +463,16 @@ static const char *JSON_PARAMETER = "parameter";
 
 #define MSG_DEPRECATED 127
 
+int __glibc_safe_or_unknown_len(void *ptr, size_t size, size_t buffer_size) {
+    // Placeholder implementation
+    return buffer_size;  // Replace with proper logic if needed
+}
+
+int __glibc_unsafe_len(void *ptr, size_t size, size_t buffer_size) {
+    // Placeholder implementation
+    return buffer_size;  // Replace with proper logic if needed
+}
+
 enum code_severity {
 	SEVERITY_ERR,
 	SEVERITY_WARN,
