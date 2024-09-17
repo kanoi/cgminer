@@ -1806,11 +1806,52 @@ static void compac_update_rates(struct cgpu_info *compac)
 	if (!opt_gekko_noboost && info->vmask && (info->asic_type == BM1387 || info->asic_type == BM1397))
 		info->wait_factor *= info->midstates;
 
-	if (info->asic_type == BM1362)
+	if (info->asic_type == BM1397) {
+
+		// computation component
+		// 168 work cores 672 available cores
+		double cores_up = pow(2, ceil(log2(info->cores))); // to the next power of 2
+		uint32_t hashrate_expected = info->chips * (uint32_t)info->frequency * (uint32_t)(info->cores);
+
+		// space component
+		uint64_t nonce_space = 0xffffffffull;
+
+		// actual calulation
+		double magic_number = (double)info->midstates*((double)info->cores/cores_up);
+		double fullscan_s = magic_number * (double)nonce_space / (double)hashrate_expected;
+		uint64_t fullscan_us = (uint64_t)(fullscan_s * 1000000.0);
+		info->fullscan_us = fullscan_us; // actual limit for duplicates
+		// per fullscan (4*168/255) * wait_factor * 2^32 hashes are approximately done
+
+		// max task wait is normalised
+		double est = info->wait_factor * (double)(info->fullscan_us);
+		info->max_task_wait = bound((uint64_t)est, 1, 1 * info->fullscan_us);
+
+	}
+
+	else if (info->asic_type == BM1362)
 	{
-		info->wait_factor *= BVROLL1362;
-		est = info->wait_factor * (float)(info->fullscan_us);
-		info->max_task_wait = bound((uint64_t)est, 1, BVROLL1362 * info->fullscan_us);
+		
+		// computation component
+		// 65 work cores 514 available cores
+		uint32_t hashrate_expected = info->chips * info->frequency * (uint32_t)(info->cores);
+
+		// space component
+		int hcn = 0x12c9; // as the user can't change it
+		int hcn_max = 0x0F0000;
+		double hcn_ratio = (double)hcn / (double)hcn_max;
+		double nonce_space = hcn_ratio * pow(2, 32);
+		uint32_t version_space = (uint32_t)((BVREQUIRED1362) >> 13);
+		
+		// actual calulation
+		double magic_number = 0.7;
+		double fullscan_s = magic_number * nonce_space * version_space / (double)hashrate_expected;
+		uint64_t fullscan_us = (uint64_t)(fullscan_s * 1000000.0);
+		info->fullscan_us = fullscan_us; // actual limit for duplicates
+
+		// max task wait is normalised
+		est = info->wait_factor0 * (float)(info->fullscan_us);
+		info->max_task_wait = bound((uint64_t)est, 1, 1 * info->fullscan_us);
 	}
 	else
 	{
