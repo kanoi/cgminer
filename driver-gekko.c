@@ -6069,7 +6069,7 @@ applog(LOG_ERR, "DBG BF expect 1 chip");
 		case BM1362:
 			info->rx_len = 11;
 			info->task_len = 86;
-			info->cores = 512;
+			info->cores = 514;
 			info->min_job_id = 0x10;
 			info->add_job_id = 0x08;
 			info->max_job_id = 0x78;
