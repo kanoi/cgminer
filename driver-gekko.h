@@ -185,6 +185,14 @@ static int cur_attempt_1362[] = { 0, -8, -16, -24 };
 	0 : (int)floor((double)(_adr) \
 		/ floor((double)0x100 / (double)(_inf->chips))) )
 
+#define TELEM_VERSION(_info) (((_info)->telem_version) & 0xf0)
+#define TELEM_VALUE(_info) (((_info)->telem_version) & 0x0f)
+
+#define TELEM_IS_V1(_info) (TELEM_VERSION(_info) == 0x10)
+#define TELEM_IS_V2(_info) (TELEM_VERSION(_info) == 0x20)
+
+#define TELEM_VALID(_info) (TELEM_IS_V1(_info) || TELEM_IS_V2(_info))
+
 // BM1397 registers
 #define BM1397FREQ 0x08
 #define BM1397TICKET 0x14

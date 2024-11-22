@@ -3989,10 +3989,8 @@ static float telem_tovout(unsigned char ch, uint32_t chips)
 	float vout;
 
 	// value 0..255
-	// linear volt 0..2.048
-	vout = (float)(ch) * (2.048 / 255.0);
-	if (chips > 1)
-		vout /= (float)chips;
+	// linear volt always 0..2.048 across 2 chips
+	vout = (float)(ch) * (2.048 / 255.0) / 2.0;
 	return vout;
 }
 
@@ -4207,8 +4205,8 @@ static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info
 	{
 		info->telem_version = rx[0];
 
-		// allow high nibble the same
-		if ((rx[0] & 0x10) != 0x10)
+		// check the upper version nibble
+		if (TELEM_VALID(info))
 		{
 			info->fail_telem = TELEM_FAIL_MAX;
 			applog(LOG_ERR, "%d: %s %d - unknown telemetry version (0x%02x)%s",
