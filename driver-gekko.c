@@ -4206,7 +4206,7 @@ static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info
 		info->telem_version = rx[0];
 
 		// check the upper version nibble
-		if (TELEM_VALID(info))
+		if (!TELEM_VALID(info))
 		{
 			info->fail_telem = TELEM_FAIL_MAX;
 			applog(LOG_ERR, "%d: %s %d - unknown telemetry version (0x%02x)%s",
