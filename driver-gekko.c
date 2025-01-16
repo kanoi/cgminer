@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2024 kano
+ * Copyright 2021-2025 kano
  * Copyright 2021-2024 sidehack
  * Copyright 2017-2021 vh
  *
@@ -1398,9 +1398,18 @@ static void calc_gsa1_freq(struct cgpu_info *compac, float frequency)
 		basef = fa = 0;
 		fb = 1;
 		fc1 = fc2 = 0;
+
+		// if it's not a cooldown, make sure reg is off,
+		//  cooldown turns it off directly
+		if (!info->cooldown)
+			info->reg_want_off = true;
 	}
 	else
 	{
+		// need reg on to resume mining
+		if (info->frequency == 0)
+			info->reg_want_on = true;
+
 		f1 = limit_freq(info, frequency, false);
 		fb = 2; fc1 = 4; fc2 = 0; // initial multiplier of 10
 		if (f1 >= 500)
@@ -2052,6 +2061,9 @@ static void compac_toggle_reset(struct cgpu_info *compac)
 		cgsleep_ms(100);
 
 		cgtime(&info->last_reset);
+
+		// gpio turns off the regulator
+		info->reg_state = false;
 		return;
 	}
 
@@ -3247,7 +3259,11 @@ static void change_freq_any(struct cgpu_info *compac, float new_freq)
 		if (info->asic_type == BM1397 || info->asic_type == BM1362)
 		{
 			if (i == 0)
+			{
 				compac_set_frequency(compac, new_freq);
+				if (info->asic_type == BM1362 && new_freq == 0)
+					info->reg_want_off = true;
+			}
 		}
 		else if (info->asic_type == BM1387)
 		{
@@ -3338,7 +3354,7 @@ gekko_usleep(info, MS2US(999));
 			continue;
 		}
 
-		if (info->cooldown)
+		if (info->cooldown || info->reg_want_off == true || info->frequency == 0)
 		{
 			if (info->frequency != 0)
 				change_freq_any(compac, 0);
@@ -4105,6 +4121,11 @@ static bool gsa1_set_regulator(struct cgpu_info *compac, struct COMPAC_INFO *inf
 		return false;
 	}
 
+	if (regon)
+		info->reg_state = true;
+	else
+		info->reg_state = false;
+
 	gekko_usleep(info, MS2US(100));
 
 	read_bytes = 0;
@@ -4364,6 +4385,39 @@ static void *compac_telemetry(void *object)
 				{
 					cgtime(&info->last_telem);
 					reset_telem = false;
+					break;
+				}
+
+				// reg state change request as opposed to cooldown
+				if (info->reg_want_off || info->reg_want_on)
+				{
+					if (info->reg_want_on)
+					{
+						if (info->reg_state == false)
+						{
+							// reset turns it on
+							info->mining_state = MINER_RESET;
+						}
+						// clear request states
+						info->reg_want_off = info->reg_want_on = false;
+					}
+					else if (info->reg_want_off && info->reg_state == true)
+					{
+						// not already off, turn it off
+						gsa1_set_corev(compac, info, COOLDOWN_COREV);
+						gsa1_set_regulator(compac, info, false);
+						gsa1_set_led(compac, info, GSA1_LED_ON);
+						info->reg_state = false;
+
+						// don't clear request state so it stays off
+					}
+
+					cgtime(&now);
+					if (ms_tdiff(&now, &info->last_telem) > MS_SECOND_1)
+					{
+						get_gsa1_telem(compac, info);
+						cgtime(&info->last_telem);
+					}
 				}
 				else
 				{
@@ -5697,6 +5751,8 @@ static void enable_gsa1(struct cgpu_info *compac, struct COMPAC_INFO *info)
 				info->interface, (uint32_t *)(&io), sizeof(io),
 				C_GETDETAILS);
 	cgsleep_ms(100);
+	// gpio turns on the regulator
+	info->reg_state = true;
 }
 
 static int64_t compac_scanwork(struct thr_info *thr)

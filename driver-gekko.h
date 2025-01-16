@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2024 kano
+ * Copyright 2021-2025 kano
  * Copyright 2017-2021 vh
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -353,6 +353,9 @@ struct COMPAC_INFO {
 	int cooldown_count;		// number of times in cooldown mode
 	bool set_new_corev;		// api request to change corev
 	int new_corev;			// api value specified
+	bool reg_state;			// telemetry regulator state
+	bool reg_want_off;		// telemetry regulator requested off (e.g. freq=0)
+	bool reg_want_on;		// telemetry regulator requested on (e.g. freq>0 and not cooldown)
 
 	float freq_mult;	     // frequency multiplier
 	float freq_base;	     // frequency mod value
