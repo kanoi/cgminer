@@ -4000,7 +4000,14 @@ static inline float telem_tovin(unsigned char ch)
 	return (float)(ch) * (6.0 / 255.0);
 }
 
-static float telem_tovout(unsigned char ch, uint32_t chips)
+static inline float telem_tovinv2(unsigned char ch)
+{
+	// value 0..255
+	// linear volt 0..(2.048*12)
+	return (float)(ch) * (2.048 / 255.0) * 12.0;
+}
+
+static float telem_tovout(unsigned char ch)
 {
 	float vout;
 
@@ -4041,6 +4048,21 @@ static unsigned char corev_totelem(int corev)
 	telem = corev / 5;
 
 	return (unsigned char)(telem);
+}
+
+// same calc for both iin and iout
+static float telem_toiinout(unsigned char ch)
+{
+	// value 0..255
+	// linear current 0..(2.048*20)
+	return (float)(ch) * (2.048 / 255.0) * 20.0;
+}
+
+static float telem_totach(unsigned char ch)
+{
+	// value 0..255
+	// linear rpm ch*30
+	return (float)(ch) * 30.0;
 }
 
 // if setting up telemetry fails this many times, assume there's no telemetry
@@ -4290,6 +4312,9 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		compac->temp = TELEM_INVTEMP;
 		info->telem_vin = 0;
 		info->telem_vout = 0;
+		info->telem_iin = 0;
+		info->telem_iout = 0;
+		info->telem_tach = 0;
 		return;
 	}
 
@@ -4304,9 +4329,14 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 	||  (err == LIBUSB_ERROR_TIMEOUT && read_bytes > 0))
 	{
 		if (read_bytes > TELEM_VIN)
-			info->telem_vin = telem_tovin(rx[TELEM_VIN]);
+		{
+			if (TELEM_IS_V1(info))
+				info->telem_vin = telem_tovin(rx[TELEM_VIN]);
+			else if (TELEM_IS_V2(info))
+				info->telem_vin = telem_tovinv2(rx[TELEM_VIN]);
+		}
 		if (read_bytes > TELEM_VOUT)
-			info->telem_vout = telem_tovout(rx[TELEM_VOUT], info->chips);
+			info->telem_vout = telem_tovout(rx[TELEM_VOUT]);
 		if (read_bytes > TELEM_TEMP1)
 		{
 			info->telem_temp = telem_totemp(rx[TELEM_TEMP1]);
@@ -4323,6 +4353,21 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 				}
 			}
 		}
+		if (TELEM_IS_V2(info))
+		{
+			if (read_bytes > TELEM_IIN)
+				info->telem_iin = telem_toiinout(rx[TELEM_IIN]);
+			if (read_bytes > TELEM_IOUT)
+				info->telem_iout = telem_toiinout(rx[TELEM_IOUT]);
+			if (read_bytes > TELEM_TACH)
+				info->telem_tach = telem_totach(rx[TELEM_TEMP2]);
+		}
+		else
+		{
+			info->telem_iin = 0;
+			info->telem_iout = 0;
+			info->telem_tach = 0;
+		}
 	}
 	else
 	{
@@ -4330,6 +4375,9 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		compac->temp = TELEM_INVTEMP;
 		info->telem_vin = 0;
 		info->telem_vout = 0;
+		info->telem_iin = 0;
+		info->telem_iout = 0;
+		info->telem_tach = 0;
 	}
 }
 
@@ -6556,7 +6604,10 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 		root = api_add_int(root, "CoremV", &info->telem_corev, false);
 		root = api_add_float(root, "Vin", &info->telem_vin, false);
 		root = api_add_float(root, "Vout", &info->telem_vout, false);
+		root = api_add_float(root, "Iin", &info->telem_iin, false);
+		root = api_add_float(root, "Iout", &info->telem_iout, false);
 		root = api_add_float(root, "Temp", &info->telem_temp, false);
+		root = api_add_float(root, "Fan", &info->telem_tach, false);
 		root = api_add_float(root, "LastTemp", &info->telem_temp_last, false);
 		root = api_add_float(root, "MaxTemp", &info->telem_temp_max, false);
 		root = api_add_timeval(root, "MaxTempTime", &info->temp_maxt, false);

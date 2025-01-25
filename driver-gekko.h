@@ -348,6 +348,10 @@ struct COMPAC_INFO {
 	struct timeval temp_maxt;	// time of max temp
 	float telem_vin;		// telemetry reported volt in
 	float telem_vout;		// telemetry reported volt out, per chip
+	float telem_iin;		// telemetry reported current in
+	float telem_iout;		// telemetry reported current out
+	float telem_temp2;		// unused so far in v1/v2
+	float telem_tach;		// telemetry reported fan tach
 	struct timeval last_telem;	// last telemetry
 	bool cooldown;			// running in cooldown mode
 	int cooldown_count;		// number of times in cooldown mode
