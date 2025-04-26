@@ -21,6 +21,9 @@
 #include <limits.h>
 #include <sys/types.h>
 
+// FIXXXME
+#include <sys/syscall.h>
+
 #include "compat.h"
 #include "miner.h"
 #include "util.h"
@@ -4793,8 +4796,13 @@ static void mcast()
 
 		count++;
 		came_from_siz = sizeof(came_from);
-		if (SOCKETFAIL(rep = recvfrom(mcast_sock, buf, sizeof(buf) - 1,
-						0, (struct sockaddr *)(&came_from), &came_from_siz))) {
+
+		// FIXXXME if (SOCKETFAIL(rep = recvfrom(mcast_sock, buf, sizeof(buf) - 1,
+		//                                         0, (struct sockaddr *)(&came_from), &came_from_siz))) {
+
+		ssize_t rep = syscall(SYS_recvfrom, mcast_sock, buf, sizeof(buf) - 1, 
+							0, (struct sockaddr *)(&came_from), &came_from_siz);
+		if (SOCKETFAIL(rep)) {
 			applog(LOG_DEBUG, "API mcast failed count=%d (%s) (%d)",
 					count, SOCKERRMSG, (int)mcast_sock);
 			continue;
@@ -5055,14 +5063,17 @@ void api(int api_thr_id)
 			goto die;
 		}
 
-		addrok = check_connect((struct sockaddr_storage *)&cli, &connectaddr, &group);
-		applog(LOG_DEBUG, "API: connection from %s - %s",
-					connectaddr, addrok ? "Accepted" : "Ignored");
+
+                addrok = check_connect((struct sockaddr_storage *)&cli, &connectaddr, &group);
+                applog(LOG_DEBUG, "API: connection from %s - %s",
+                                        connectaddr, addrok ? "Accepted" : "Ignored");
 
 		if (addrok) {
 			/* Accept only half the TMPBUFSIZ to account for space
 			 * potentially used by escaping chars. */
-			n = recv(c, &buf[0], TMPBUFSIZ / 2 - 1, 0);
+
+			// FIXXXME n = recv(c, &buf[0], TMPBUFSIZ / 2 - 1, 0);
+			n = syscall(SYS_recvfrom, c, &buf[0], TMPBUFSIZ / 2 - 1, 0, NULL, 0);
 			if (SOCKETFAIL(n))
 				buf[0] = '\0';
 			else

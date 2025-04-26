@@ -688,10 +688,10 @@ json_t *json_rpc_call(CURL *curl, const char *url,
 	}
 
 	pool->cgminer_pool_stats.times_sent++;
-	if (curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD, &byte_count) == CURLE_OK)
+	if (curl_easy_getinfo(curl, CURLINFO_SIZE_UPLOAD_T, &byte_count) == CURLE_OK) // FIXXXME CURLINFO_SIZE_UPLOAD
 		pool->cgminer_pool_stats.bytes_sent += byte_count;
 	pool->cgminer_pool_stats.times_received++;
-	if (curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD, &byte_count) == CURLE_OK)
+	if (curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &byte_count) == CURLE_OK) // FIXXXME CURLINFO_SIZE_DOWNLOAD
 		pool->cgminer_pool_stats.bytes_received += byte_count;
 
 	if (probing) {
