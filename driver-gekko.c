@@ -5,8 +5,8 @@
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 3 of the License, or (at your option)
- * any later version.  See COPYING for more details.
+ * Software Foundation; version 3 of the License.
+ * See COPYING for more details.
  */
 
 #include "driver-gekko.h"
@@ -447,7 +447,8 @@ static void compac_send2(struct cgpu_info *compac, unsigned char *req_tx, uint32
 
 	// leave original buffer intact
 
-	if (info->asic_type == BM1397 || info->asic_type == BM1362)
+	if (info->asic_type == BM1397 || info->asic_type == BM1362
+	||  info->asic_type == BM1370)
 	{
 		info->cmd[0] = 0x55;
 		info->cmd[1] = 0xAA;
@@ -510,6 +511,7 @@ static float limit_freq(struct COMPAC_INFO *info, float freq, bool zero)
 			freq = fbound(freq, 100, 800);
 		break;
 	 case IDENT_GSA1:
+	 case IDENT_GSA2:
 		// allow 0 also if zero is true - coded obviously
 		if (zero && freq == 0)
 			freq = 0;
@@ -545,6 +547,12 @@ static void ping_freq(struct cgpu_info *compac, int asic)
 	else if (info->asic_type == BM1362)
 	{
 		unsigned char pingall[] = {0x52, 0x05, 0x00, BM1362FREQ, 0x00};
+		compac_send2(compac, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
+		ping = true;
+	}
+	else if (info->asic_type == BM1370)
+	{
+		unsigned char pingall[] = {0x52, 0x05, 0x00, BM1370FREQ, 0x00};
 		compac_send2(compac, pingall, sizeof(pingall), 8 * sizeof(pingall) - 8, "pingfreq");
 		ping = true;
 	}
@@ -1085,7 +1093,7 @@ struct TICKET_INFO
 //  after nonce_count nonces i.e. after nonce_count nonces there should be a nonce
 //  below low_limit, or the ticket mask is actually higher than it was set to
 //  the gsl function is cdf_gamma_Q(nonces, nonces, low_limit/diff)
-// ticket_1397 isn't based on the chip, so it's used for the BM1362 also
+// ticket_1397 isn't based on the chip, so it's used for the BM1362/1370 also
 static struct TICKET_INFO ticket_1397[] =
 {
 	{ 64,	0xfc,  20000,	65.9,	63.9, 2600 }, // 90 59.3m Erlang=1.6x10-5 <- 64+ nonces
@@ -1183,7 +1191,8 @@ static double noncepercent(struct COMPAC_INFO *info, int chip, struct timeval *n
 {
 	double sec, hashpersec, noncepersec, nonceexpect;
 
-	if (info->asic_type != BM1397 && info->asic_type != BM1362)
+	if (info->asic_type != BM1397 && info->asic_type != BM1362
+	&&  info->asic_type != BM1370)
 		return 0.0;
 
 	sec = CHTIME * (CHNUM-1) + (now->tv_sec % CHTIME) + ((double)now->tv_usec / 1000000.0);
@@ -1194,7 +1203,8 @@ static double noncepercent(struct COMPAC_INFO *info, int chip, struct timeval *n
 			/ (double)(ticket_1397[info->ticket_number].diff);
 
 	// all accounted in chip 0
-	if (info->ident == IDENT_GSA1 && chip == 0)
+	if ((info->ident == IDENT_GSA1 && chip == 0)
+	||  (info->ident == IDENT_GSA2 && chip == 0))
 		noncepersec *= (double)(info->chips);
 
 	nonceexpect = noncepersec * sec;
@@ -1368,12 +1378,12 @@ static void calc_gsf_freq(struct cgpu_info *compac, float frequency, int chip)
 	ping_freq(compac, 0);
 }
 
-// GSA1
+// GSA1 or GSA2
 static void calc_gsa1_freq(struct cgpu_info *compac, float frequency)
 {
 	struct COMPAC_INFO *info = compac->device_data;
 
-	if (info->asic_type != BM1362)
+	if (info->asic_type != BM1362 && info->asic_type != BM1370)
 		return;
 
 	// if attempting the same frequency that previously failed ...
@@ -1384,6 +1394,8 @@ static void calc_gsa1_freq(struct cgpu_info *compac, float frequency)
 
 	// default 200Mhz if it fails
 	unsigned char freqbufall[] = {0x51, 0x09, 0x00, BM1362FREQ, 0x40, 0xF0, 0x02, 0x24, 0x00};
+	if (info->asic_type == BM1370)
+		freqbufall[3] = BM1370FREQ;
 
 	float deffreq = 200.0;
 
@@ -1637,6 +1649,114 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		compac_send2(compac, init0, sizeof(init0), 8 * sizeof(init0) - 8, "init0");
 		gekko_usleep(info, MS2US(10));
 	}
+	else if (info->asic_type == BM1370)
+	{
+		unsigned char init1[] = {0x51, 0x09, 0x00, 0xa8, 0x00, 0x07, 0x00, 0x00, 0x00};
+		unsigned char init2[] = {0x53, 0x05, 0x00, 0x18, 0xf0, 0x00, 0xc1, 0x00, 0x00};
+
+		compac_send2(compac, init1, sizeof(init1), 8 * sizeof(init1) - 8, "init1");
+		gekko_usleep(info, MS2US(10));
+		compac_send2(compac, init2, sizeof(init2), 8 * sizeof(init2) - 8, "init2");
+		gekko_usleep(info, MS2US(100));
+
+		// chain inactive
+		unsigned char chainin[5] = {0x53, 0x05, 0x00, 0x00, 0x00};
+		compac_send2(compac, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
+		gekko_usleep(info, MS2US(100));
+
+		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
+		for (i = 0; i < info->chips; i++)
+		{
+			chippy[2] = CHIPPY1370(info, i);
+			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
+			gekko_usleep(info, MS2US(10));
+		}
+
+		unsigned char init3[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x8d, 0x04, 0x00};
+		unsigned char init4[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x80, 0x0e, 0x00};
+
+		compac_send2(compac, init3, sizeof(init3), 8 * sizeof(init3) - 8, "init3");
+		gekko_usleep(info, MS2US(10));
+		compac_send2(compac, init4, sizeof(init4), 8 * sizeof(init4) - 8, "init4");
+		gekko_usleep(info, MS2US(100));
+
+		// set ticket based on chips, pool will be above this anyway
+		set_ticket(compac, 0.0, true, false);
+
+		unsigned char init5[] = {0x51, 0x09, 0x00, 0x58, 0x00, 0x01, 0x11, 0x11, 0x00};
+		unsigned char init6[] = {0x52, 0x05, 0x00, 0x58, 0x00};
+
+		compac_send2(compac, init5, sizeof(init5), 8 * sizeof(init5) - 8, "init5");
+		gekko_usleep(info, MS2US(50));
+		compac_send2(compac, init6, sizeof(init6), 8 * sizeof(init6) - 8, "init6");
+		gekko_usleep(info, MS2US(100));
+
+		unsigned char core0[] = {0x41, 0x09, 0x00, 0x58, 0x00, 0x01, 0xf1, 0x11, 0x00};
+		unsigned char core1[] = {0x42, 0x05, 0x00, 0x58, 0x00};
+		for (i = 0; i < (int)(info->chips); i++)
+		{
+			core0[2] = core1[2] = CHIPPY1370(info, i);
+			compac_send2(compac, core0, sizeof(core0), 8 * sizeof(core0) - 8, "core0");
+			gekko_usleep(info, MS2US(10));
+			compac_send2(compac, core1, sizeof(core1), 8 * sizeof(core1) - 8, "core1");
+			gekko_usleep(info, MS2US(10));
+		}
+
+		calc_gsa1_freq(compac, info->frequency_default);
+
+		gekko_usleep(info, MS2US(20));
+
+		unsigned char pll[] = {0x51, 0x09, 0x00, 0x68, 0x5a, 0xa5, 0x5a, 0xa5, 0x00};
+		compac_send2(compac, pll, sizeof(pll), 8 * sizeof(pll) - 8, "pll");
+		gekko_usleep(info, MS2US(10));
+
+		unsigned char hcn[] = {0x51, 0x09, 0x00, 0x10, 0x00, 0x00, 0x0f, 0x25, 0x00};
+		compac_send2(compac, hcn, sizeof(hcn), 8 * sizeof(hcn) - 8, "hcn");
+		gekko_usleep(info, MS2US(10));
+
+		unsigned char core2[] = {0x41, 0x09, 0x00, 0x2c, 0x00, 0x13, 0x00, 0x07, 0x00};
+		unsigned char core3[] = {0x42, 0x05, 0x00, 0x2c, 0x00};
+		for (i = 0; i < (int)(info->chips); i++)
+		{
+			core2[2] = core3[2] = CHIPPY1370(info, i);
+			compac_send2(compac, core2, sizeof(core2), 8 * sizeof(core2) - 8, "core2");
+			gekko_usleep(info, MS2US(10));
+			compac_send2(compac, core3, sizeof(core3), 8 * sizeof(core3) - 8, "core3");
+			gekko_usleep(info, MS2US(10));
+		}
+
+		unsigned char baudrate[] = { 0x51, 0x09, 0x00, 0x28, 0x01, 0x30, 0x00, 0x00, 0x00 }; // 3.125M
+		info->bauddiv = 1;
+
+		//compac_send2(compac, baudrate, sizeof(baudrate), 8 * sizeof(baudrate) - 8, "baud");
+		gekko_usleep(info, MS2US(10));
+
+		unsigned char init7[] = {0x51, 0x09, 0x00, 0xA8, 0x00, 0x07, 0x01, 0xF0, 0x00};
+		compac_send2(compac, init7, sizeof(init7), 8 * sizeof(init7) - 8, "init7");
+		gekko_usleep(info, MS2US(10));
+
+		unsigned char init8[] = {0x51, 0x09, 0x00, 0x18, 0xf0, 0x00, 0xc1, 0x00, 0x00};
+		for (i = 0; i < 2; i++)
+		{
+			compac_send2(compac, init8, sizeof(init8), 8 * sizeof(init8) - 8, "init8");
+			gekko_usleep(info, MS2US(10));
+		}
+
+		unsigned char init9[] = {0x52, 0x05, 0x00, 0x18, 0x00};
+		compac_send2(compac, init9, sizeof(init9), 8 * sizeof(init9) - 8, "init9");
+		gekko_usleep(info, MS2US(50));
+
+		unsigned char inita[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x8b, 0x00, 0x00};
+		unsigned char initb[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x80, 0x0e, 0x00};
+		unsigned char initc[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x82, 0xaa, 0x00};
+
+		compac_send2(compac, inita, sizeof(inita), 8 * sizeof(inita) - 8, "inita");
+		gekko_usleep(info, MS2US(10));
+		compac_send2(compac, initb, sizeof(initb), 8 * sizeof(initb) - 8, "initb");
+		gekko_usleep(info, MS2US(10));
+		compac_send2(compac, initc, sizeof(initc), 8 * sizeof(initc) - 8, "initc");
+		gekko_usleep(info, MS2US(10));
+	}
 	else if (info->asic_type == BM1387)
 	{
 		unsigned char buffer[5] = {0x55, 0x05, 0x00, 0x00, 0x00};
@@ -1752,7 +1872,8 @@ applog(LOG_ERR, "DBG Sending BF chip init");
 	}
 
 	if (info->mining_state == MINER_CHIP_COUNT_OK
-	||  (info->ident == IDENT_GSA1 && info->mining_state == MINER_OPEN_CORE))
+	||  (info->ident == IDENT_GSA1 && info->mining_state == MINER_OPEN_CORE)
+	||  (info->ident == IDENT_GSA2 && info->mining_state == MINER_OPEN_CORE))
 	{
 		applog(LOG_INFO, "%d: %s %d - open cores",
 			compac->cgminer_id, compac->drv->name, compac->device_id);
@@ -1804,7 +1925,8 @@ static void compac_update_rates(struct cgpu_info *compac)
 	info->hashrate = info->chips * info->frequency * info->cores * 1000000 * info->hr_scale;
 	info->fullscan_us = 1000.0 * info->hr_scale * 1000.0 * 0xffffffffull / info->hashrate;
 	info->fullscan_ms = info->fullscan_us / 1000.0;
-	if (info->asic_type != BM1397 && info->asic_type != BM1362)
+	if (info->asic_type != BM1397 && info->asic_type != BM1362
+	&&  info->asic_type != BM1370)
 	{
 		info->ticket_mask = bound(pow(2, ceil(log(info->hashrate / (2.0 * 0xffffffffull)) / log(2))) - 1, 0, 4000);
 		info->ticket_mask = (info->asic_type == BM1387) ? 0 : info->ticket_mask;
@@ -1821,6 +1943,12 @@ static void compac_update_rates(struct cgpu_info *compac)
 		est = info->wait_factor * (float)(info->fullscan_us);
 		info->max_task_wait = bound((uint64_t)est, 1, BVROLL1362 * info->fullscan_us);
 	}
+	else if (info->asic_type == BM1370)
+	{
+		info->wait_factor *= BVROLL1370;
+		est = info->wait_factor * (float)(info->fullscan_us);
+		info->max_task_wait = bound((uint64_t)est, 1, BVROLL1370 * info->fullscan_us);
+	}
 	else
 	{
 		est = info->wait_factor * (float)(info->fullscan_us);
@@ -1834,7 +1962,8 @@ static void compac_update_rates(struct cgpu_info *compac)
 		else
 			info->tune_up = opt_gekko_tune_up;
 	}
-	else if (info->asic_type == BM1397 || info->asic_type == BM1362)
+	else if (info->asic_type == BM1397 || info->asic_type == BM1362
+	     ||  info->asic_type == BM1370)
 	{
 		// 90% will always allow at least 2 freq steps
 		if (opt_gekko_tune_up > 90)
@@ -1924,7 +2053,7 @@ static void compac_set_frequency(struct cgpu_info *compac, float frequency)
 	{
 		calc_gsf_freq(compac, frequency, -1);
 	}
-	else if (info->asic_type == BM1362)
+	else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 	{
 		calc_gsa1_freq(compac, frequency);
 	}
@@ -2038,7 +2167,7 @@ static void compac_toggle_reset(struct cgpu_info *compac)
 	struct COMPAC_INFO *info = compac->device_data;
 	unsigned short usb_val;
 
-	if (info->asic_type == BM1362)
+	if (info->asic_type == BM1362 || info->asic_type == BM1370)
 	{
 		struct cp210x_gpio_w
 		{
@@ -2193,6 +2322,7 @@ static void compac_gsf_nonce(struct cgpu_info *compac, K_ITEM *item)
 
 	// test the exact jobid/midnum
 	uint32_t w_job_id = job_id & 0xfc;
+
 	if (w_job_id <= info->max_job_id)
 	{
 		work = info->work[w_job_id];
@@ -2414,10 +2544,14 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 	int asic_id, i, v;
 	bool ok;
 
-	if (info->asic_type != BM1362)
+	if (info->asic_type != BM1362 && info->asic_type != BM1370)
 		return;
 
-	job_id = rx[7] & 0xf8;
+	if (info->asic_type == BM1362)
+		job_id = rx[7] & JOBID_1362;
+	else
+		job_id = (rx[7] & JOBID_1370) >> 1;
+
 	nonce = (rx[5] << 0) | (rx[4] << 8) | (rx[3] << 16) | (rx[2] << 24);
 	version = ((rx[9] << 0) | (rx[8] << 8)) << 5;
 
@@ -2480,11 +2614,19 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 	// this normally never happens ...
 	if (!ok)
 	{
-		// not current, so try each cur_attempt_1362
-		for (i = 0; !ok && i < (int)CUR_ATTEMPT_1362; i++)
+		int lim;
+		if (info->asic_type == BM1362)
+			lim = (int)CUR_ATTEMPT_1362;
+		else
+			lim = (int)CUR_ATTEMPT_1370;
+		// not current, so try each cur_attempt_1362/70
+		for (i = 0; !ok && i < lim; i++)
 		{
 			// if the data is corrupt, attempt based on the current job_id
-			w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1362[i], info) & 0xf8;
+			if (info->asic_type == BM1362)
+				w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1362[i], info) & JOBID_1362;
+			else
+				w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1370[i], info) & JOBID_1370;
 			work = info->work[w_job_id];
 			if (work && w_job_id != job_id)
 			{
@@ -2923,16 +3065,23 @@ static uint64_t compac_check_nonce(struct cgpu_info *compac)
 	struct timeval now;
 	int i;
 
-	if (info->asic_type == BM1387) {
+	if (info->asic_type == BM1387)
+	{
 		job_id = info->rx[5] & 0xff;
 		nonce = (info->rx[3] << 0) | (info->rx[2] << 8) | (info->rx[1] << 16) | (info->rx[0] << 24);
-	} else if (info->asic_type == BM1384) {
+	}
+	else if (info->asic_type == BM1384)
+	{
 		job_id = info->rx[4] ^ 0x80;
 		nonce = (info->rx[3] << 0) | (info->rx[2] << 8) | (info->rx[1] << 16) | (info->rx[0] << 24);
-	} else if (info->asic_type == BM1397) {
+	}
+	else if (info->asic_type == BM1397)
+	{
 		// should never call here
 		return hashes;
-	} else if (info->asic_type == BM1362) {
+	}
+	else if (info->asic_type == BM1362 || info->asic_type == BM1370)
+	{
 		// should never call here
 		return hashes;
 	}
@@ -3078,12 +3227,15 @@ static void busy_work(struct COMPAC_INFO *info)
 		info->task[info->task_len - 2] = (crc >> 8) & 0xff;
 		info->task[info->task_len - 1] = crc & 0xff;
 	}
-	else if (info->asic_type == BM1362)
+	else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 	{
 		// N.B. any block header will find nonces
 		info->task[0] = 0x21;
 		info->task[1] = 0x36;
-		info->task[2] = info->job_id & 0xf8;
+		if (info->asic_type == BM1362)
+			info->task[2] = info->job_id & JOBID_1362;
+		else
+			info->task[2] = info->job_id & JOBID_1370;
 		info->task[3] = 0x01;
 		memset(info->task + 4, 0x00, 4);
 		// block header all 0
@@ -3177,7 +3329,7 @@ static void init_task(struct COMPAC_INFO *info)
 		info->task[info->task_len - 2] = (crc >> 8) & 0xff;
 		info->task[info->task_len - 1] = crc & 0xff;
 	}
-	else if (info->asic_type == BM1362)
+	else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 	{
 		// ensure work has block version rolling, with a value of BVREQUIRED1362
 		// zzz - abort cgminer if it doesn't
@@ -3185,9 +3337,15 @@ static void init_task(struct COMPAC_INFO *info)
 		// TODO: work contains an unneeded midstate, stop generating it?
 		//  does the work generator always know who it's generating work for?
 		info->task[0] = 0x21;
-		info->task[1] = 0x36;
+		if (info->asic_type == BM1362)
+			info->task[1] = 0x36;
+		else
+			info->task[1] = 0xff;
 		info->task[2] = info->job_id & 0xff;
-		info->task[3] = 0x01; // 1 work item
+		if (info->asic_type == BM1362)
+			info->task[3] = 0x01; // 1 work item
+		else
+			info->task[3] = 0x00;
 		memset(info->task + 4, 0x00, 4);
 
 		// bits
@@ -3256,12 +3414,14 @@ static void change_freq_any(struct cgpu_info *compac, float new_freq)
 		cgtime(&asic->last_frequency_adjust);
 		cgtime(&info->monitor_time);
 		asic->frequency_updated = 1;
-		if (info->asic_type == BM1397 || info->asic_type == BM1362)
+		if (info->asic_type == BM1397 || info->asic_type == BM1362
+		||  info->asic_type == BM1370)
 		{
 			if (i == 0)
 			{
 				compac_set_frequency(compac, new_freq);
-				if (info->asic_type == BM1362 && new_freq == 0)
+				if (new_freq == 0
+				&& (info->asic_type == BM1362 || info->asic_type == BM1370))
 					info->reg_want_off = true;
 			}
 		}
@@ -3358,6 +3518,7 @@ gekko_usleep(info, MS2US(999));
 		{
 			if (info->frequency != 0)
 				change_freq_any(compac, 0);
+
 			gekko_usleep(info, MS2US(999));
 			continue;
 		}
@@ -3457,7 +3618,8 @@ gekko_usleep(info, MS2US(999));
 					struct ASIC_INFO *asic = &info->asics[i];
 
 					// missing nonces
-					if (info->asic_type == BM1397 || info->asic_type == BM1362)
+					if (info->asic_type == BM1397 || info->asic_type == BM1362
+					||  info->asic_type == BM1370)
 					{
 						if (has_freq && i == 0 && info->nonce_limit > 0.0
 						&&  ms_tdiff(&now, &info->last_nonce) > info->nonce_limit)
@@ -3486,7 +3648,8 @@ gekko_usleep(info, MS2US(999));
 
 					// asic check-in failed
 					if (!info->lock_freq
-					&&  info->asic_type != BM1397 && info->asic_type != BM1362)
+					&&  info->asic_type != BM1397 && info->asic_type != BM1362
+					&&  info->asic_type != BM1370)
 					{
 						if (ms_tdiff(&asic->last_frequency_ping, &asic->last_frequency_reply) > MS_SECOND_30
 						&&  ms_tdiff(&now, &asic->last_frequency_reply) > MS_SECOND_30)
@@ -3786,7 +3949,7 @@ gekko_usleep(info, MS2US(999));
 		}
 
 		cgtime(&stt);
-		// TODO: requirements of 1362 mask??? zzz
+		// TODO: requirements of 1362/1370 mask??? zzz
 		work = get_queued(compac);
 
 		if (work)
@@ -3852,7 +4015,7 @@ applog(LOG_ERR, "DBG BF got work");
 				else
 					info->task_len = 54;
 			}
-			else if (info->asic_type == BM1362)
+			else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 			{
 				// save the base block version (bv) for multiple nonces
 				cg_memcpy(work->base_bv, work->data, 4);
@@ -3870,7 +4033,8 @@ applog(LOG_ERR, "DBG BF got work");
 
 			if (cp->stratum_active
 			&&  (info->asic_type == BM1387 || info->asic_type == BM1397
-			     || info->asic_type == BM1362 || info->asic_type == BFCLAR))
+			     || info->asic_type == BM1362 || info->asic_type == BM1370
+			     || info->asic_type == BFCLAR))
 			{
 				// get Dups instead of sending busy work
 
@@ -3894,7 +4058,8 @@ applog(LOG_ERR, "DBG BF got work");
 		unsigned char jid = info->task[2];
 #endif
 
-		if (info->asic_type == BM1397 || info->asic_type == BM1362)
+		if (info->asic_type == BM1397 || info->asic_type == BM1362
+		||  info->asic_type == BM1370)
 		{ 
 			int k;
 			for (k = (info->task_len - 1); k >= 0; k--)
@@ -4162,6 +4327,7 @@ static bool gsa1_set_regulator(struct cgpu_info *compac, struct COMPAC_INFO *inf
 	return true;
 }
 
+// GSA1 and GSA2 are the same
 // solid off
 #define GSA1_LED_OFF '-'
 // once per second/heartbeat
@@ -4274,7 +4440,7 @@ static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info
 
 	gekko_usleep(info, MS2US(100));
 
-	if (!gsa1_set_corev(compac, info, opt_gekko_gsa1_corev))
+	if (!gsa1_set_corev(compac, info, info->telem_corev_def))
 		return false;
 
 	if (!gsa1_set_regulator(compac, info, true))
@@ -4360,7 +4526,7 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 			if (read_bytes > TELEM_IOUT)
 				info->telem_iout = telem_toiinout(rx[TELEM_IOUT]);
 			if (read_bytes > TELEM_TACH)
-				info->telem_tach = telem_totach(rx[TELEM_TEMP2]);
+				info->telem_tach = telem_totach(rx[TELEM_TACH]);
 		}
 		else
 		{
@@ -4389,7 +4555,7 @@ static void *compac_telemetry(void *object)
 	struct timeval now;
 	bool reset_telem;
 
-	if (info->ident != IDENT_GSA1)
+	if (info->ident != IDENT_GSA1 && info->ident != IDENT_GSA2)
 		return NULL;
 
 	info->has_telem = false;
@@ -4512,7 +4678,7 @@ static void *compac_telemetry(void *object)
 						info->set_new_corev = false;
 						// if set, save it as the reset default
 						if (gsa1_set_corev(compac, info, new_corev))
-							opt_gekko_gsa1_corev = new_corev;
+							info->telem_corev_def = new_corev;
 					}
 				}
 			}
@@ -4648,7 +4814,7 @@ static void *compac_handle_rx(void *object, int read_bytes, int path)
 	return NULL;
 }
 
-static void *compac_gsfk_nonce_que(void *object)
+static void *compac_gsfak_nonce_que(void *object)
 {
 	struct cgpu_info *compac = (struct cgpu_info *)object;
 	struct COMPAC_INFO *info = compac->device_data;
@@ -4657,7 +4823,7 @@ static void *compac_gsfk_nonce_que(void *object)
 	int rc;
 
 	if (info->asic_type != BM1397 && info->asic_type != BM1362
-	&&  info->asic_type != BFCLAR)
+	&&  info->asic_type != BM1370 && info->asic_type != BFCLAR)
 		return NULL;
 
 	// wait at most 42ms for a nonce
@@ -4673,7 +4839,9 @@ static void *compac_gsfk_nonce_que(void *object)
 		{
 			if (info->asic_type == BM1397)
 				compac_gsf_nonce(compac, item);
-			else if(info->asic_type == BM1362)
+			else if (info->asic_type == BM1362)
+				compac_gsa1_nonce(compac, item);
+			else if (info->asic_type == BM1370)
 				compac_gsa1_nonce(compac, item);
 			else
 				compac_gsk_nonce(compac, item);
@@ -4697,12 +4865,12 @@ static void *compac_gsfk_nonce_que(void *object)
 	return NULL;
 }
 
-static bool gsf_reply(struct COMPAC_INFO *info, unsigned char *rx, int len, struct timeval *now)
+static bool gsfa_reply(struct COMPAC_INFO *info, unsigned char *rx, int len, struct timeval *now)
 {
 	unsigned char fa, fb, fc1, fc2;
 	bool used = false;
 
-	// BM1397FREQ == BM1362FREQ
+	// BM1397FREQ == BM1362FREQ == BM1370FREQ
 	if (len == (int)(info->rx_len) && rx[7] == BM1397FREQ)
 	{
 		int chip = 0;
@@ -4710,6 +4878,8 @@ static bool gsf_reply(struct COMPAC_INFO *info, unsigned char *rx, int len, stru
 			chip = TOCHIPPY1397(info, rx[6]);
 		else if (info->asic_type == BM1362)
 			chip = TOCHIPPY1362(info, rx[6]);
+		else if (info->asic_type == BM1370)
+			chip = TOCHIPPY1370(info, rx[6]);
 
 #if 0
 {char tmpbuf[256];
@@ -4745,7 +4915,7 @@ applog(LOG_ERR, " DBG freq reply [ %s] chip=%d fa=0x%02x fb=0x%02x fc1=0x%02x fc
 					used = true;
 				}
 			}
-			else if (info->asic_type == BM1362)
+			else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 			{
 				if (fa >= 0 && fb > 0)
 				{
@@ -4783,8 +4953,13 @@ static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
 				unsigned char init0[] = {0x51, 0x09, 0x00, 0xA4, 0x90, 0x00, 0xFF, 0xFF, 0x1C};
 				compac_send2(compac, init0, sizeof(init0), 8 * sizeof(init0) - 8, "INIT0");
 			}
+			else if (info->asic_type == BM1370)
+			{
+				unsigned char init0[] = {0x51, 0x09, 0x00, 0xA4, 0x80, 0x00, 0xFF, 0xFF, 0x18};
+				compac_send2(compac, init0, sizeof(init0), 8 * sizeof(init0) - 8, "INIT0");
+			}
 
-			// same for BM1397 and BM1362
+			// same for BM1397 and BM1362 and BM1370
 			unsigned char chippy[] = {0x52, 0x05, 0x00, 0x00, 0x0A};
 			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "CHIPPY");
 			info->mining_state = MINER_CHIP_COUNT_XX;
@@ -4792,7 +4967,19 @@ static void *compac_listen2(struct cgpu_info *compac, struct COMPAC_INFO *info)
 			tmo = 1000;
 		}
 
+// non-zero for DBG to ignore the regular timeout when no data is available
+// N.B. it's cgminer global and not thread safe, but really that doesn't matter
+#define IGNTMO 1
+#if IGNTMO
+int prev = libusb_ign_tmo;
+libusb_ign_tmo = 1;
+#endif
 		usb_read_timeout(compac, ((char *)rx)+pos, BUFFER_MAX-pos, &read_bytes, tmo, C_GETRESULTS);
+#if IGNTMO
+libusb_ign_tmo = prev;
+#endif
+//		if (read_bytes > 0)
+//			dumpbuffer(compac, LOG_INFO, "RX", rx+pos, read_bytes);
 		pos += read_bytes;
 
 		cgtime(&now);
@@ -4887,7 +5074,8 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 			 case MINER_CHIP_COUNT_XX:
 				chipped = false;
 				if ((info->asic_type == BM1397 && rx[2] == 0x13 && rx[3] == 0x97)
-				||  (info->asic_type == BM1362 && rx[2] == 0x13 && rx[3] == 0x62))
+				||  (info->asic_type == BM1362 && rx[2] == 0x13 && rx[3] == 0x62)
+				||  (info->asic_type == BM1370 && rx[2] == 0x13 && rx[3] == 0x70))
 				{
 					struct ASIC_INFO *asic = &info->asics[info->chips];
 					memset(asic, 0, sizeof(struct ASIC_INFO));
@@ -4916,7 +5104,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 
 						// don't discard the data
 						if (len == (int)(info->rx_len) && okcrc)
-							gsf_reply(info, rx, info->rx_len, &now);
+							gsfa_reply(info, rx, info->rx_len, &now);
 					}
 					else
 						info->mining_state = MINER_RESET;
@@ -4926,7 +5114,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 				used = false;
 				if (len == (int)(info->rx_len) && okcrc)
 				{
-					used = gsf_reply(info, rx, info->rx_len, &now);
+					used = gsfa_reply(info, rx, info->rx_len, &now);
 #if 0
 if (!used)
 {
@@ -4964,7 +5152,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			 default:
 				used = false;
 				if (len == (int)(info->rx_len) && okcrc)
-					used = gsf_reply(info, rx, info->rx_len, &now);
+					used = gsfa_reply(info, rx, info->rx_len, &now);
 #if 0
 if (!used)
 {
@@ -5239,7 +5427,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 				used = false;
 				okcrc = (bfcrc(rx+2, len-3) == rx[len-1]);
 				if (len == (int)(info->rx_len) && okcrc)
-					used = gsf_reply(info, rx, info->rx_len, &now);
+					used = gsfa_reply(info, rx, info->rx_len, &now);
 #if 0
 if (!used)
 {
@@ -5287,7 +5475,8 @@ static void *compac_listen(void *object)
 	struct cgpu_info *compac = (struct cgpu_info *)object;
 	struct COMPAC_INFO *info = compac->device_data;
 
-	if (info->asic_type == BM1397 || info->asic_type == BM1362)
+	if (info->asic_type == BM1397 || info->asic_type == BM1362
+	||  info->asic_type == BM1370)
 		return compac_listen2(compac, info);
 
 	if (info->asic_type == BFCLAR)
@@ -5626,9 +5815,23 @@ static bool compac_init(struct thr_info *thr)
 		info->ramp_time = MS_MINUTE_5;
 		break;
 	 case IDENT_GSA1:
+		info->telem_corev_def = opt_gekko_gsa1_corev;
 		info->frequency_requested = limit_freq(info, opt_gekko_gsa1_freq, false);
 
 		info->frequency_start = limit_freq(info, opt_gekko_gsa1_start_freq, false);
+		if (info->frequency_start < 100)
+			info->frequency_start = 100;
+		// ensure request is >= start
+		if (info->frequency_requested < info->frequency_start)
+			info->frequency_requested = info->frequency_start;
+		// due to ticket mask allow longer
+		info->ramp_time = MS_MINUTE_5;
+		break;
+	 case IDENT_GSA2:
+		info->telem_corev_def = opt_gekko_gsa2_corev;
+		info->frequency_requested = limit_freq(info, opt_gekko_gsa2_freq, false);
+
+		info->frequency_start = limit_freq(info, opt_gekko_gsa2_start_freq, false);
 		if (info->frequency_start < 100)
 			info->frequency_start = 100;
 		// ensure request is >= start
@@ -5677,7 +5880,8 @@ static bool compac_init(struct thr_info *thr)
 		pthread_mutex_init(&info->joblock, NULL);
 
 		if (info->ident == IDENT_GSF || info->ident == IDENT_GSFM
-		||  info->ident == IDENT_GSA1 || info->ident == IDENT_GSK)
+		||  info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2
+		||  info->ident == IDENT_GSK)
 		{
 			info->nlist = k_new_list("GekkoNonces", sizeof(struct COMPAC_NONCE),
 						ALLOC_NLIST_ITEMS, LIMIT_NLIST_ITEMS, true);
@@ -5712,7 +5916,7 @@ static bool compac_init(struct thr_info *thr)
 		}
 		pthread_detach(info->wthr.pth);
 
-		if (info->ident == IDENT_GSA1)
+		if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 		{
 			gekko_usleep(info, MS2US(100));
 
@@ -5731,7 +5935,8 @@ static bool compac_init(struct thr_info *thr)
 		}
 
 		if (info->ident == IDENT_GSF || info->ident == IDENT_GSFM
-		||  info->ident == IDENT_GSA1 || info->ident == IDENT_GSK)
+		||  info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2
+		||  info->ident == IDENT_GSK)
 		{
 			gekko_usleep(info, MS2US(10));
 
@@ -5747,7 +5952,7 @@ static bool compac_init(struct thr_info *thr)
 					compac->cgminer_id, compac->drv->name, compac->device_id);
 				return false;
 			}
-			if (thr_info_create(&(info->nthr), NULL, compac_gsfk_nonce_que, (void *)compac))
+			if (thr_info_create(&(info->nthr), NULL, compac_gsfak_nonce_que, (void *)compac))
 			{
 				applog(LOG_ERR, "%d: %s %d - nonce thread create failed",
 					compac->cgminer_id, compac->drv->name, compac->device_id);
@@ -5766,6 +5971,7 @@ static bool compac_init(struct thr_info *thr)
 	return true;
 }
 
+// GSA1 and GSA2
 static void enable_gsa1(struct cgpu_info *compac, struct COMPAC_INFO *info)
 {
 	struct cp210x_gpio_w
@@ -5852,7 +6058,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			break;
 		case MINER_CHIP_COUNT_OK:
 			// telemetry handles this
-			if (info->ident == IDENT_GSA1)
+			if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 				return 0;
 
 			gekko_usleep(info, MS2US(50));
@@ -5865,7 +6071,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			return 0;
 			break;
 		case MINER_OPEN_CORE:
-			if (info->ident == IDENT_GSA1)
+			if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 			{
 				// after telemetry
 				gekko_usleep(info, MS2US(50));
@@ -5873,6 +6079,8 @@ static int64_t compac_scanwork(struct thr_info *thr)
 				compac_send_chain_inactive(compac);
 				info->zero_check = 0;
 				info->task_hcn = 0;
+				if (info->ident == IDENT_GSA2)
+					compac_set_frequency(compac, info->frequency_start);
 				info->mining_state = MINER_OPEN_CORE_OK;
 				return 0;
 			}
@@ -5922,7 +6130,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 			{
 				compac_toggle_reset(compac);
 			}
-			else if (info->asic_type == BM1362)
+			else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 			{
 				compac_toggle_reset(compac);
 				enable_gsa1(compac, info);
@@ -6005,7 +6213,8 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 
 	if (opt_gekko_gsc_detect || opt_gekko_gsd_detect || opt_gekko_gse_detect
 	||  opt_gekko_gsh_detect || opt_gekko_gsi_detect || opt_gekko_gsf_detect
-	||  opt_gekko_r909_detect || opt_gekko_gsa1_detect || opt_gekko_gsk_detect)
+	||  opt_gekko_r909_detect || opt_gekko_gsa1_detect || opt_gekko_gsa2_detect
+	||  opt_gekko_gsk_detect)
 	{
 		exclude_me  = (info->ident == IDENT_BSC && !opt_gekko_gsc_detect);
 		exclude_me |= (info->ident == IDENT_GSC && !opt_gekko_gsc_detect);
@@ -6018,6 +6227,7 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 		exclude_me |= (info->ident == IDENT_GSF && !opt_gekko_gsf_detect);
 		exclude_me |= (info->ident == IDENT_GSFM && !opt_gekko_r909_detect);
 		exclude_me |= (info->ident == IDENT_GSA1 && !opt_gekko_gsa1_detect);
+		exclude_me |= (info->ident == IDENT_GSA2 && !opt_gekko_gsa2_detect);
 		exclude_me |= (info->ident == IDENT_GSK && !opt_gekko_gsk_detect);
 	}
 
@@ -6077,7 +6287,11 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 		case IDENT_GSA1:
 			info->asic_type = BM1362;
 			info->expected_chips = 1;
-
+			enable_gsa1(compac, info);
+			break;
+		case IDENT_GSA2:
+			info->asic_type = BM1370;
+			info->expected_chips = 1;
 			enable_gsa1(compac, info);
 			break;
 		case IDENT_GSK:
@@ -6139,6 +6353,18 @@ applog(LOG_ERR, "DBG BF expect 1 chip");
 			info->can_boost = false;
 			//compac_toggle_reset(compac);
 			break;
+		case BM1370:
+			info->rx_len = 11;
+			info->task_len = 86;
+			info->cores = 2048;
+			info->min_job_id = 0x18;
+			info->add_job_id = 0x18;
+			info->max_job_id = 0x78;
+			// not used as such
+			info->midstates = 1;
+			info->can_boost = false;
+			//compac_toggle_reset(compac);
+			break;
 		case BFCLAR:
 			info->rx_len = 4;
 			info->task_len = 82;
@@ -6158,7 +6384,7 @@ applog(LOG_ERR, "DBG BF expect 1 chip");
 		quit(1, "code bug: max_job_id specified > JOB_MAX");
 
 	info->interface = usb_interface(compac);
-	if (info->ident == IDENT_GSA1)
+	if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 		info->telemetry = _usb_interface(compac, 1);
 	info->mining_state = MINER_INIT;
 
@@ -6280,9 +6506,11 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 	}
 
 	snprintf(abt, sizeof(abt), "%s%s", (info->boosted) ? "+" : "",
-			(info->ident == IDENT_GSA1 && info->has_telem) ? "T" : "");
+			((info->ident == IDENT_GSA1 && info->has_telem)
+			 || (info->ident == IDENT_GSA2 && info->has_telem)) ? "T" : "");
 
-	if (info->ident == IDENT_GSA1 && info->has_telem)
+	if ((info->ident == IDENT_GSA1 && info->has_telem)
+	||  (info->ident == IDENT_GSA2 && info->has_telem))
 	{
 		snprintf(telem_stat, sizeof(telem_stat), " %.0fC %.0fmV",
 			info->telem_temp, info->telem_vout * 1000.0);
@@ -6324,7 +6552,7 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 			asic_stat[info->chips + 3 + i] = ' ';
 	}
 
-	if (info->ident == IDENT_GSA1)
+	if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 	{
 		if (!(info->has_telem))
 		{
@@ -6361,7 +6589,8 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 	}
 
 	if (info->asic_type == BM1387 || info->asic_type == BM1397
-	||  info->asic_type == BM1362 || info->asic_type == BFCLAR)
+	||  info->asic_type == BM1362 || info->asic_type == BM1370
+	||  info->asic_type == BFCLAR)
 	{
 		char *chipnam = "?CHIP?";
 		if (info->asic_type == BM1387)
@@ -6370,6 +6599,8 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 			chipnam = "BM1397";
 		else if (info->asic_type == BM1362)
 			chipnam = "BM1362";
+		else if (info->asic_type == BM1370)
+			chipnam = "BM1370";
 		else if (info->asic_type == BFCLAR)
 			chipnam = "BFCLAR";
 
@@ -6584,6 +6815,14 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 			root = api_add_uint64(root, nambuf, &info->cur_off[i], true);
 		}
 	}
+	else if (info->asic_type == BM1370)
+	{
+		for (i = 0; i < (int)CUR_ATTEMPT_1370; i++)
+		{
+			snprintf(nambuf, sizeof(nambuf), "cur_off_%d_%d", i, cur_attempt_1370[i]);
+			root = api_add_uint64(root, nambuf, &info->cur_off[i], true);
+		}
+	}
 	root = api_add_double(root, "Rolling", &info->rolling, false);
 	root = api_add_int(root, "Resets", &info->fail_count, false);
 	root = api_add_float(root, "Frequency", &info->frequency, false);
@@ -6598,7 +6837,7 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	root = api_add_bool(root, "FreqLocked", &info->lock_freq, false);
 	if (info->asic_type == BM1397)
 		root = api_add_int(root, "USBProp", &info->usb_prop, false);
-	if (info->ident == IDENT_GSA1)
+	if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 	{
 		root = api_add_bool(root, "HasTelemetry", &info->has_telem, false);
 		root = api_add_int(root, "CoremV", &info->telem_corev, false);
@@ -6619,8 +6858,9 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	{
 		struct ASIC_INFO *asic = &info->asics[i];
 
-		// currently BM1362 stores all nonce info in chip 0
-		if (info->asic_type != BM1362 || i == 0)
+		// currently BM1362/BM1370 stores all nonce info in chip 0
+		if (i == 0 || (info->asic_type != BM1362
+				&&  info->asic_type != BM1370))
 		{
 			snprintf(nambuf, sizeof(nambuf), "Chip%dNonces", i);
 			root = api_add_int(root, nambuf, &asic->nonces, true);
@@ -6805,7 +7045,7 @@ static void compac_shutdown(struct thr_info *thr)
 			calc_gsf_freq(compac, 0, -1);
 			compac_toggle_reset(compac);
 		}
-		else if (info->asic_type == BM1362)
+		else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 		{
 			calc_gsa1_freq(compac, 0);
 			if (info->has_telem)
@@ -6834,9 +7074,10 @@ static void compac_shutdown(struct thr_info *thr)
 	// Let threads close
 	pthread_join(info->rthr.pth, NULL);
 	pthread_join(info->wthr.pth, NULL);
-	if (info->ident == IDENT_GSA1)
+	if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 		pthread_join(info->tthr.pth, NULL);
-	if (info->asic_type == BM1397 || info->asic_type == BM1362 || info->asic_type == BFCLAR)
+	if (info->asic_type == BM1397 || info->asic_type == BM1362
+	||  info->asic_type == BM1370 || info->asic_type == BFCLAR)
 		pthread_join(info->nthr.pth, NULL);
 	PTH(thr) = 0L;
 }
@@ -6849,14 +7090,14 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	if (strcasecmp(option, "help") == 0)
 	{
 		// freq: all of the drivers automatically fix the value
-		//	BM1397/BM1362 0 is a special case, since it 'works'
+		//	BM1397/BM1362/BM1370 0 is a special case, since it 'works'
 		if (info->asic_type == BM1397)
 		{
 			snprintf(replybuf, siz, "reset freq: 0-800 chip: N:0-800 target: 0-800"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
 						" usbprop: %d-1000 require: 0.0-0.8", USLEEPMIN);
 		}
-		else if (info->asic_type == BM1362)
+		else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 		{
 			snprintf(replybuf, siz, "reset freq: 0-800 target: 0-800"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
@@ -7023,9 +7264,9 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	// set corev
 	if (strcasecmp(option, "corev") == 0)
 	{
-		if (info->ident != IDENT_GSA1)
+		if (info->ident != IDENT_GSA1 && info->ident != IDENT_GSA2)
 		{
-			snprintf(replybuf, siz, "corev only for GSA1");
+			snprintf(replybuf, siz, "corev only for GSA1/2");
 			return replybuf;
 		}
 

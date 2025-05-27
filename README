@@ -899,7 +899,7 @@ this time.
 
 Per device status:
 
- 0: GSF 100nnnnn: 400.00MHz  85C  13% 0.79V  | 263.5G / 263.7Gh/s WU:18901.8/m
+ 0: GSF 100nnnnn: 400.00MHz  85C  13% 790mV  | 263.5G / 263.7Gh/s WU:18901.8/m
 
 Each column is as follows:
 Temperature (if supported)
@@ -912,7 +912,7 @@ The work utility defined as the number of diff1 shares work / minute
 
 alternating with
 
- 0: GSF 100nnnnn: 400.00MHz  86C  13% 0.80V  | A:290348 R:1067 HW:88
+ 0: GSF 100nnnnn: 400.00MHz  86C  13% 800mV  | A:290348 R:1067 HW:88
 
 The total difficulty of accepted shares
 The total difficulty of rejected shares

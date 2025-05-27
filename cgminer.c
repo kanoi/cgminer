@@ -1,13 +1,13 @@
 /*
- * Copyright 2011-2024 Andrew Smith
+ * Copyright 2011-2025 Andrew Smith
  * Copyright 2011-2018 Con Kolivas
  * Copyright 2011-2012 Luke Dashjr
  * Copyright 2010 Jeff Garzik
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 3 of the License, or (at your option)
- * any later version.  See COPYING for more details.
+ * Software Foundation; version 3 of the License.
+ * See COPYING for more details.
  */
 
 #include "config.h"
@@ -322,6 +322,7 @@ bool opt_gekko_gsi_detect = 0;
 bool opt_gekko_gsf_detect = 0;
 bool opt_gekko_r909_detect = 0;
 bool opt_gekko_gsa1_detect = 0;
+bool opt_gekko_gsa2_detect = 0;
 bool opt_gekko_gsk_detect = 0;
 float opt_gekko_gsc_freq = 150;
 float opt_gekko_gsd_freq = 100;
@@ -341,6 +342,7 @@ int opt_gekko_gsi_freq = 550;
 int opt_gekko_gsf_freq = 200;
 int opt_gekko_r909_freq = 450;
 int opt_gekko_gsa1_freq = 300;
+int opt_gekko_gsa2_freq = 300;
 int opt_gekko_gsk_freq = 200;
 int opt_gekko_bauddiv = 0;
 int opt_gekko_gsh_vcore = 400;
@@ -349,7 +351,9 @@ int opt_gekko_step_delay = 15;
 bool opt_gekko_mine2 = false; // gekko code ignores it
 int opt_gekko_tune2 = 0;
 int opt_gekko_gsa1_start_freq = 300;
+int opt_gekko_gsa2_start_freq = 300;
 int opt_gekko_gsa1_corev = 300; // 0x3c
+int opt_gekko_gsa2_corev = 270;
 #endif
 #ifdef USE_HASHRATIO
 #include "driver-hashratio.h"
@@ -1985,7 +1989,10 @@ static struct opt_table opt_config_table[] = {
 			 "Detect GekkoScience Terminus R909 BM1397"),
 	OPT_WITHOUT_ARG("--gekko-compaca1-detect",
 			 opt_set_bool, &opt_gekko_gsa1_detect,
-			 "Detect GekkoScience CompacF BM1397"),
+			 "Detect GekkoScience CompacA1 BM1362"),
+	OPT_WITHOUT_ARG("--gekko-compaca2-detect",
+			 opt_set_bool, &opt_gekko_gsa2_detect,
+			 "Detect GekkoScience CompacA2 BM1370"),
 	OPT_WITHOUT_ARG("--gekko-kbox-detect",
 			 opt_set_bool, &opt_gekko_gsk_detect,
 			 "Detect GekkoScience KBox BFCLAR"),
@@ -2031,6 +2038,9 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--gekko-compaca1-freq",
 		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa1_freq,
 		     "Set GekkoScience CompacA1 BM1362 frequency in MHz, range 100-800"),
+	OPT_WITH_ARG("--gekko-compaca2-freq",
+		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa2_freq,
+		     "Set GekkoScience CompacA2 BM1370 frequency in MHz, range 100-800"),
 	OPT_WITH_ARG("--gekko-kbox-freq",
 		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsk_freq,
 		     "Set GekkoScience KBox BFCLAR frequency in MHz, range 120-120"),
@@ -2051,9 +2061,15 @@ static struct opt_table opt_config_table[] = {
 	OPT_WITH_ARG("--gekko-compaca1-start-freq",
 		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa1_start_freq,
                      "Ramp CompacA1 start frequency MHz 100-800"),
+	OPT_WITH_ARG("--gekko-compaca2-start-freq",
+		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa2_start_freq,
+                     "Ramp CompacA2 start frequency MHz 100-800"),
 	OPT_WITH_ARG("--gekko-compaca1-corev",
 		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa1_corev,
                      "CompacA1 core millivolts 0-500"),
+	OPT_WITH_ARG("--gekko-compaca2-corev",
+		     set_int_0_to_9999, opt_show_intval, &opt_gekko_gsa2_corev,
+                     "CompacA2 core millivolts 0-500"),
 #endif
 #ifdef HAVE_LIBCURL
 	OPT_WITH_ARG("--btc-address",

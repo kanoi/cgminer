@@ -1,11 +1,11 @@
 /*
- * Copyright 2012-2024 Andrew Smith
+ * Copyright 2012-2025 Andrew Smith
  * Copyright 2013-2015 Con Kolivas <kernel@kolivas.org>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
- * Software Foundation; either version 3 of the License, or (at your option)
- * any later version.  See COPYING for more details.
+ * Software Foundation; version 3 of the License.
+ * See COPYING for more details.
  */
 
 #include "config.h"
@@ -22,6 +22,9 @@ static pthread_mutex_t cgusb_lock;
 static pthread_mutex_t cgusbres_lock;
 static cglock_t cgusb_fd_lock;
 static cgtimer_t usb11_cgt;
+
+// allow debugging to ignore timeouts
+int libusb_ign_tmo = 0;
 
 #define NODEV(err) ((err) != LIBUSB_SUCCESS && (err) != LIBUSB_ERROR_TIMEOUT)
 
@@ -1180,6 +1183,18 @@ static struct usb_find_devices find_dev[] = {
 		INTINFO(gek3_ints) },
 	{
 		.drv = DRIVER_gekko,
+		.name = "GSA",
+		.ident = IDENT_GSA2,
+		.idVendor = 0x10c4,
+		.idProduct = 0xea70,
+		.iManufacturer = "Silicon Labs",
+		.iProduct = "GekkoScience Compac A2",
+		.config = 1,
+		.timeout = COMPAC_TIMEOUT_MS,
+		.latency = LATENCY_UNUSED,
+		INTINFO(gek3_ints) },
+	{
+		.drv = DRIVER_gekko,
 		.name = "GSK",
 		.ident = IDENT_GSK,
 		.idVendor = 0x04d8,
@@ -1190,6 +1205,10 @@ static struct usb_find_devices find_dev[] = {
 		.timeout = BITFURY_TIMEOUT_MS,
 		.latency = LATENCY_UNUSED,
 		INTINFO(gek4_ints) },
+
+// extra dev iManufacturer/iProduct names not used in production
+#include "usbgekdev.h"
+
 #endif
 	{ DRIVER_MAX, NULL, 0, 0, 0, NULL, NULL, 0, 0, 0, 0, NULL }
 };
@@ -3408,7 +3427,8 @@ err_retry:
 	STATS_TIMEVAL(&tv_finish);
 	USB_STATS(cgpu, &tv_start, &tv_finish, err, mode, cmd, seq, timeout);
 
-	if (err < 0) {
+	// allow debugging to ignore timeouts
+	if (err < 0 && (libusb_ign_tmo == 0 || err != LIBUSB_ERROR_TIMEOUT)) {
 		applog(LOG_DEBUG, "%s%i: %s (amt=%d err=%d ern=%d)",
 				cgpu->drv->name, cgpu->device_id,
 				usb_cmdname(cmd), *transferred, err, errn);
