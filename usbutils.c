@@ -1195,6 +1195,18 @@ static struct usb_find_devices find_dev[] = {
 		INTINFO(gek3_ints) },
 	{
 		.drv = DRIVER_gekko,
+		.name = "GSA",
+		.ident = IDENT_GSA2,
+		.idVendor = 0x10c4,
+		.idProduct = 0xea70,
+		.iManufacturer = "Silicon Labs",
+		.iProduct = "GekkoScience Terminus A2",
+		.config = 1,
+		.timeout = COMPAC_TIMEOUT_MS,
+		.latency = LATENCY_UNUSED,
+		INTINFO(gek3_ints) },
+	{
+		.drv = DRIVER_gekko,
 		.name = "GSK",
 		.ident = IDENT_GSK,
 		.idVendor = 0x04d8,

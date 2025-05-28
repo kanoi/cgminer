@@ -1664,6 +1664,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		compac_send2(compac, chainin, sizeof(chainin), 8 * sizeof(chainin) - 8, "chin");
 		gekko_usleep(info, MS2US(100));
 
+		// set chip address
 		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
 		for (i = 0; i < info->chips; i++)
 		{
@@ -1695,7 +1696,8 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char core1[] = {0x42, 0x05, 0x00, 0x58, 0x00};
 		for (i = 0; i < (int)(info->chips); i++)
 		{
-			core0[2] = core1[2] = CHIPPY1370(info, i);
+			// strings of 1 chip - last in string - descending
+			core0[2] = core1[2] = CHIPPY1370(info, (info->chips-i-1));
 			compac_send2(compac, core0, sizeof(core0), 8 * sizeof(core0) - 8, "core0");
 			gekko_usleep(info, MS2US(10));
 			compac_send2(compac, core1, sizeof(core1), 8 * sizeof(core1) - 8, "core1");
@@ -1718,7 +1720,8 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char core3[] = {0x42, 0x05, 0x00, 0x2c, 0x00};
 		for (i = 0; i < (int)(info->chips); i++)
 		{
-			core2[2] = core3[2] = CHIPPY1370(info, i);
+			// strings of 1 chip - first in string - descending
+			core0[2] = core1[2] = CHIPPY1370(info, (info->chips-i-1));
 			compac_send2(compac, core2, sizeof(core2), 8 * sizeof(core2) - 8, "core2");
 			gekko_usleep(info, MS2US(10));
 			compac_send2(compac, core3, sizeof(core3), 8 * sizeof(core3) - 8, "core3");
