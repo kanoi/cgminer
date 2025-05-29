@@ -4228,6 +4228,7 @@ static float telem_toiinout(unsigned char ch)
 
 static float telem_totach(unsigned char ch)
 {
+	applog(LOG_DEBUG, "%s(%d)->%d", __func__, (int)ch, (int)ch * 30);
 	// value 0..255
 	// linear rpm ch*30
 	return (float)(ch) * 30.0;
@@ -4365,6 +4366,46 @@ static void gsa1_set_led(struct cgpu_info *compac, struct COMPAC_INFO *info, cha
 		compac->cgminer_id, compac->drv->name, compac->device_id, err, read_bytes, rx);
 }
 
+static bool gsa2_set_fan(struct cgpu_info *compac, struct COMPAC_INFO *info, int fan_percent)
+{
+	int err, wrote_bytes, read_bytes, tmo = 100;
+	char fan_per[] = "Fx";
+	unsigned char rx[4];
+	size_t len;
+
+	if (fan_percent < 0)
+		fan_percent = 0;
+	if (fan_percent > 100)
+		fan_percent = 100;
+
+	applog(LOG_WARNING, "%d: %s %d - set fan %d%%",
+		compac->cgminer_id, compac->drv->name, compac->device_id, fan_percent);
+
+	len = strlen(fan_per);
+	fan_per[1] = fan_percent;
+	err = usb_write_ii(compac, info->telemetry, fan_per, len, &wrote_bytes, C_SETFAN);
+	if (err != LIBUSB_SUCCESS)
+	{
+		applog(LOG_WARNING, "%d: %s %d - usb set fan error (%d)",
+			compac->cgminer_id, compac->drv->name, compac->device_id, err);
+		return false;
+	}
+
+	gekko_usleep(info, MS2US(100));
+
+	read_bytes = 0;
+	rx[0] = '\0';
+	err = usb_read_ii_timeout(compac, info->telemetry, (char *)rx, 1,
+					&read_bytes, tmo, C_FANREPLY);
+	rx[read_bytes] = '\0';
+	applog(LOG_INFO, "%s() %d: %s %d - fan reply (err=%d,repsiz=%d,rep='%s')", __func__,
+		compac->cgminer_id, compac->drv->name, compac->device_id, err, read_bytes, rx);
+
+	gekko_usleep(info, MS2US(100));
+
+	return true;
+}
+
 // check telemetry works and set it ready for mining
 static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 {
@@ -4484,6 +4525,7 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		info->telem_iin = 0;
 		info->telem_iout = 0;
 		info->telem_tach = 0;
+		info->telem_temp2 = 0;
 		return;
 	}
 
@@ -4526,16 +4568,28 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		{
 			if (read_bytes > TELEM_IIN)
 				info->telem_iin = telem_toiinout(rx[TELEM_IIN]);
-			if (read_bytes > TELEM_IOUT)
-				info->telem_iout = telem_toiinout(rx[TELEM_IOUT]);
 			if (read_bytes > TELEM_TACH)
 				info->telem_tach = telem_totach(rx[TELEM_TACH]);
+
+			if (TELEM_VALUE(info) == 0)
+			{
+				if (read_bytes > TELEM_IOUT)
+					info->telem_iout = telem_toiinout(rx[TELEM_IOUT]);
+				info->telem_temp2 = 0;
+			}
+			else
+			{
+				info->telem_iout = 0;
+				if (read_bytes > TELEM_TEMP2)
+					info->telem_temp2 = telem_totemp(rx[TELEM_TEMP2]);
+			}
 		}
 		else
 		{
 			info->telem_iin = 0;
 			info->telem_iout = 0;
 			info->telem_tach = 0;
+			info->telem_temp2 = 0;
 		}
 	}
 	else
@@ -4547,6 +4601,7 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		info->telem_iin = 0;
 		info->telem_iout = 0;
 		info->telem_tach = 0;
+		info->telem_temp2 = 0;
 	}
 }
 
@@ -4682,6 +4737,13 @@ static void *compac_telemetry(void *object)
 						// if set, save it as the reset default
 						if (gsa1_set_corev(compac, info, new_corev))
 							info->telem_corev_def = new_corev;
+					}
+
+					if (info->set_new_fan)
+					{
+						int new_fan = info->new_fan;
+						info->set_new_fan = false;
+						gsa2_set_fan(compac, info, new_fan);
 					}
 				}
 			}
@@ -6205,6 +6267,9 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 	info = cgcalloc(1, sizeof(struct COMPAC_INFO));
 	// less than minimum possible
 	info->telem_temp_max = TELEM_INVTEMP;
+	// start fan at 100% if telem V1.2
+	info->new_fan = 100;
+	info->set_new_fan = true;
 
 #if TUNE_CODE
 	pthread_mutex_init(&info->slock, NULL);
@@ -6515,8 +6580,26 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 	if ((info->ident == IDENT_GSA1 && info->has_telem)
 	||  (info->ident == IDENT_GSA2 && info->has_telem))
 	{
-		snprintf(telem_stat, sizeof(telem_stat), " %.0fC %.0fmV",
-			info->telem_temp, info->telem_vout * 1000.0);
+		char fan0[16] = "";
+		char t2[8] = "";
+
+		if (TELEM_IS_V2_1(info))
+		{
+			snprintf(t2, sizeof(t2), "/%.0f", info->telem_temp2);
+
+			if (info->telem_tach == 0 && info->last_telem.tv_sec > 0)
+			{
+				snprintf(fan0, sizeof(fan0), "FAN:0rpm* ");
+			}
+
+			else if (opt_widescreen)
+			{
+				snprintf(fan0, sizeof(fan0), "FAN:%.0frpm ", info->telem_tach);
+			}
+		}
+
+		snprintf(telem_stat, sizeof(telem_stat), " %s%.0f%sC %.0fmV",
+			fan0, info->telem_temp, t2, info->telem_vout * 1000.0);
 	}
 
 	if (info->chips > chip_max)
@@ -6849,6 +6932,7 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 		root = api_add_float(root, "Iin", &info->telem_iin, false);
 		root = api_add_float(root, "Iout", &info->telem_iout, false);
 		root = api_add_float(root, "Temp", &info->telem_temp, false);
+		root = api_add_float(root, "Temp2", &info->telem_temp2, false);
 		root = api_add_float(root, "Fan", &info->telem_tach, false);
 		root = api_add_float(root, "LastTemp", &info->telem_temp_last, false);
 		root = api_add_float(root, "MaxTemp", &info->telem_temp_max, false);
@@ -7112,9 +7196,12 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 		else
 		{
+			bool canfan = TELEM_IS_V2_1(info);
+			
 			snprintf(replybuf, siz, "reset freq: 0-1200 chip: N:0-800 target: 0-1200"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
-						" require: 0.0-0.8");
+						" require: 0.0-0.8 corev: 0-500%s zeromaxt",
+						canfan ? " setfan: 0-100 (%)" : "");
 		}
 		return replybuf;
 	}
@@ -7286,6 +7373,33 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 			new_corev = 500;
 		info->new_corev = new_corev;
 		info->set_new_corev = true;
+
+		return NULL;
+	}
+
+	// set fan rpm %
+	if (strcasecmp(option, "setfan") == 0)
+	{
+		if ((info->ident != IDENT_GSA1 && info->ident != IDENT_GSA2)
+		||  (!TELEM_IS_V2_1(info)))
+		{
+			snprintf(replybuf, siz, "setfan only for GSA1/2 V1.2");
+			return replybuf;
+		}
+
+		if (!setting || !*setting)
+		{
+			snprintf(replybuf, siz, "missing value");
+			return replybuf;
+		}
+
+		int new_fan = atoi(setting);
+		if (new_fan < 0)
+			new_fan = 0;
+		if (new_fan > 100)
+			new_fan = 100;
+		info->new_fan = new_fan;
+		info->set_new_fan = true;
 
 		return NULL;
 	}

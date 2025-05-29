@@ -201,6 +201,8 @@ static int cur_attempt_1370[] = { 0, -24, -48, -72 };
 
 #define TELEM_IS_V1(_info) (TELEM_VERSION(_info) == 0x10)
 #define TELEM_IS_V2(_info) (TELEM_VERSION(_info) == 0x20)
+#define TELEM_IS_V2_1(_info) ((TELEM_VERSION(_info) == 0x20) \
+				&& (TELEM_VALUE(_info) == 0x01))
 
 #define TELEM_VALID(_info) (TELEM_IS_V1(_info) || TELEM_IS_V2(_info))
 
@@ -370,13 +372,15 @@ struct COMPAC_INFO {
 	float telem_vout;		// telemetry reported volt out, per chip
 	float telem_iin;		// telemetry reported current in
 	float telem_iout;		// telemetry reported current out
-	float telem_temp2;		// unused so far in v1/v2
+	float telem_temp2;		// v2.1
 	float telem_tach;		// telemetry reported fan tach
 	struct timeval last_telem;	// last telemetry
 	bool cooldown;			// running in cooldown mode
 	int cooldown_count;		// number of times in cooldown mode
 	bool set_new_corev;		// api request to change corev
-	int new_corev;			// api value specified
+	int new_corev;			// api corev value specified
+	bool set_new_fan;		// api request to change fan rpm %
+	int new_fan;			// api fan rpm % value specified
 	bool reg_state;			// telemetry regulator state
 	bool reg_want_off;		// telemetry regulator requested off (e.g. freq=0)
 	bool reg_want_on;		// telemetry regulator requested on (e.g. freq>0 and not cooldown)
