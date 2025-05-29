@@ -7186,9 +7186,12 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 		else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 		{
+			bool canfan = TELEM_IS_V2_1(info);
+			
 			snprintf(replybuf, siz, "reset freq: 0-800 target: 0-800"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
-						" require: 0.0-0.8 corev: 0-500 zeromaxt");
+						" require: 0.0-0.8 corev: 0-500%s zeromaxt",
+						canfan ? " setfan: 0-100 (%)" : "");
 		}
 		else if (info->asic_type == BFCLAR)
 		{
@@ -7196,12 +7199,9 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 		else
 		{
-			bool canfan = TELEM_IS_V2_1(info);
-			
 			snprintf(replybuf, siz, "reset freq: 0-1200 chip: N:0-800 target: 0-1200"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
-						" require: 0.0-0.8 corev: 0-500%s zeromaxt",
-						canfan ? " setfan: 0-100 (%)" : "");
+						" require: 0.0-0.8");
 		}
 		return replybuf;
 	}
