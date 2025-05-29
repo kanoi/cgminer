@@ -2307,8 +2307,8 @@ static void compac_gsf_nonce(struct cgpu_info *compac, K_ITEM *item)
 	info->prev_nonce = nonce;
 	asic->prev_nonce = nonce;
 
-	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker);
+	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d) rx[7]=%02x",
+		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker, rx[7]);
 
 	if (!opt_gekko_noboost && info->vmask)
 	{
@@ -2564,7 +2564,7 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 	cur_job_id = info->job_id;
 	mutex_unlock(&info->lock);
 
-	// ?? zzz in job_id? or rx[6]?
+	// TODO: from the nonce address ...
 	asic_id = 0;
 
 	struct ASIC_INFO *asic = &info->asics[asic_id];
@@ -2594,8 +2594,9 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 	info->prev_nonce = nonce;
 	asic->prev_nonce = nonce;
 
-	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, info->tracker);
+	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d) cur[%02x] rx[7]=%02x",
+		compac->cgminer_id, compac->drv->name, compac->device_id,
+		nonce, job_id, info->tracker, cur_job_id, rx[7]);
 
 	ok = false;
 
@@ -2629,7 +2630,7 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 			if (info->asic_type == BM1362)
 				w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1362[i], info) & JOBID_1362;
 			else
-				w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1370[i], info) & JOBID_1370;
+				w_job_id = JOB_ID_ROLL(cur_job_id, cur_attempt_1370[i], info);
 			work = info->work[w_job_id];
 			if (work && w_job_id != job_id)
 			{
@@ -2644,9 +2645,10 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 					info->cur_off[i]++;
 					ok = true;
 
-					applog(LOG_INFO, "%d: %s %d - Nonce Recovered : %08x @ job[%02x]->fix[%02x] len %u prelen %u nonce diff %0.1f",
+					applog(LOG_INFO, "%d: %s %d - Nonce Recovered : %08x @ job[%02x]->fix[%02x] cur[%02d] len %u prelen %u nonce diff %0.1f",
 						compac->cgminer_id, compac->drv->name, compac->device_id,
-						nonce, job_id, w_job_id, (uint32_t)(DATA_NONCE(item)->len),
+						nonce, job_id, w_job_id, cur_job_id,
+						(uint32_t)(DATA_NONCE(item)->len),
 						(uint32_t)(DATA_NONCE(item)->prelen), diff);
 				}
 			}
@@ -2654,9 +2656,9 @@ static void compac_gsa1_nonce(struct cgpu_info *compac, K_ITEM *item)
 
 		if (!ok)
 		{
-			applog(LOG_INFO, "%d: %s %d - Nonce Dumped : %08x @ job[%02x] cur[%02x] diff %u",
+			applog(LOG_INFO, "%d: %s %d - Nonce Dumped : %08x @ job[%02x] dat[%02x] cur[%02x] diff %u rx[7]=%02x",
 				compac->cgminer_id, compac->drv->name, compac->device_id,
-				nonce, w_job_id, job_id, info->difficulty);
+				nonce, w_job_id, job_id, cur_job_id, info->difficulty, rx[7]);
 
 			inc_hw_errors_n(info->thr, info->difficulty);
 			cgtime(&info->last_hwerror);
@@ -2865,8 +2867,8 @@ applog(LOG_ERR, "DBG checking BF nonces");
 	info->prev_nonce = nonce;
 	asic->prev_nonce = nonce;
 
-	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x (%d)",
-		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, info->tracker);
+	applog(LOG_INFO, "%d: %s %d - Device reported nonce: %08x @ %02x (%d)",
+		compac->cgminer_id, compac->drv->name, compac->device_id, nonce, job_id, info->tracker);
 
 	ok = false;
 
@@ -4057,9 +4059,7 @@ applog(LOG_ERR, "DBG BF got work");
 		}
 
 		int task_len = info->task_len;
-#if 1
 		unsigned char jid = info->task[2];
-#endif
 
 		if (info->asic_type == BM1397 || info->asic_type == BM1362
 		||  info->asic_type == BM1370)
@@ -4084,6 +4084,9 @@ for (i = 0; i < task_len; i += 8)
 		info->task[i+4], info->task[i+5], info->task[i+6], info->task[i+7],
 		i, i+7);
 }
+#else
+	applog(LOG_INFO, "%d: %s %d - Sending task [%02x] len %3u",
+			compac->cgminer_id, compac->drv->name, compac->device_id, jid, task_len);
 #endif
 
 		cgtime(&now); // set the time we actually sent it
@@ -4108,9 +4111,15 @@ applog(LOG_ERR, "DBG BF sending work");
 				info->gsk_work_sent = false;
 				mutex_unlock(&info->wlock);
 			}
-			applog(LOG_WARNING, "%d: %s %d - usb failure (%d)", compac->cgminer_id, compac->drv->name, compac->device_id, err);
+			applog(LOG_WARNING, "%d: %s %d - usb failure (%d)",
+				compac->cgminer_id, compac->drv->name, compac->device_id, err);
 			info->mining_state = MINER_RESET;
 			continue;
+		}
+		else
+		{
+			applog(LOG_INFO, "%d: %s %d - Sent task [%02x] len %3u",
+				compac->cgminer_id, compac->drv->name, compac->device_id, jid, task_len);
 		}
 		if (info->ident == IDENT_GSK)
 		{
@@ -4121,8 +4130,9 @@ applog(LOG_ERR, "DBG BF sending work");
 		if (sent_bytes != task_len)
 		{
 			if (ms_tdiff(&now, &info->last_write_error) > (5 * 1000)) {
-				applog(LOG_WARNING, "%d: %s %d - usb write error [%d:%d]",
-					compac->cgminer_id, compac->drv->name, compac->device_id, sent_bytes, task_len);
+				applog(LOG_WARNING, "%d: %s %d - usb write error [%d:%d] task [%02x]",
+					compac->cgminer_id, compac->drv->name, compac->device_id,
+					sent_bytes, task_len, jid);
 				cgtime(&info->last_write_error);
 			}
 			job_added = false;
