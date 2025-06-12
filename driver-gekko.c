@@ -5150,8 +5150,12 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 				chipped = false;
 				if ((info->asic_type == BM1397 && rx[2] == 0x13 && rx[3] == 0x97)
 				||  (info->asic_type == BM1362 && rx[2] == 0x13 && rx[3] == 0x62)
-				||  (info->asic_type == BM1370 && rx[2] == 0x13 && rx[3] == 0x70))
+				||  (info->asic_type == BM1370 && rx[2] == 0x13 && rx[3] == 0x70)
+				||  (info->asic_type == BM1370 && rx[2] == 0x13 && rx[3] == 0x68))
 				{
+					if (info->asic_type == BM1370 && rx[2] == 0x13 && rx[3] == 0x68)
+						info->cores = 1280;
+
 					struct ASIC_INFO *asic = &info->asics[info->chips];
 					memset(asic, 0, sizeof(struct ASIC_INFO));
 					asic->frequency = info->frequency_default;
@@ -6696,7 +6700,12 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 		else if (info->asic_type == BM1362)
 			chipnam = "BM1362";
 		else if (info->asic_type == BM1370)
-			chipnam = "BM1370";
+		{
+			if (info->cores == 1280)
+				chipnam = "BM1368";
+			else
+				chipnam = "BM1370";
+		}
 		else if (info->asic_type == BFCLAR)
 			chipnam = "BFCLAR";
 
