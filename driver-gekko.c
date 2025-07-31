@@ -1515,7 +1515,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		}
 
 		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
-		for (i = 0; i < info->chips; i++)
+		for (i = 0; i < (int)(info->chips); i++)
 		{
 			chippy[2] = CHIPPY1397(info, i);
 			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
@@ -1585,7 +1585,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		gekko_usleep(info, MS2US(100));
 
 		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
-		for (i = 0; i < info->chips; i++)
+		for (i = 0; i < (int)(info->chips); i++)
 		{
 			chippy[2] = CHIPPY1362(info, i);
 			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
@@ -1622,7 +1622,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char core2[] = {0x41, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x85, 0x40, 0x00};
 		unsigned char core3[] = {0x41, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x80, 0x08, 0x00};
 		unsigned char core4[] = {0x41, 0x09, 0x00, 0x3C, 0x80, 0x00, 0x82, 0xAA, 0x00};
-		for (i = 0; i < info->chips; i++)
+		for (i = 0; i < (int)(info->chips); i++)
 		{
 			core0[2] = core1[2] = core2[2] = core3[2] = core4[2] = CHIPPY1362(info, i);
 			compac_send2(compac, core0, sizeof(core0), 8 * sizeof(core0) - 8, "core0");
@@ -1666,7 +1666,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 
 		// set chip address
 		unsigned char chippy[] = {0x40, 0x05, 0x00, 0x00, 0x00};
-		for (i = 0; i < info->chips; i++)
+		for (i = 0; i < (int)(info->chips); i++)
 		{
 			chippy[2] = CHIPPY1370(info, i);
 			compac_send2(compac, chippy, sizeof(chippy), 8 * sizeof(chippy) - 8, "chippy");
@@ -1768,7 +1768,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8); // chain inactive
 		gekko_usleep(info, MS2US(5));
 		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 8); // chain inactive
-		for (i = 0; i < info->chips; i++) {
+		for (i = 0; i < (int)(info->chips); i++) {
 			buffer[0] = 0x41;
 			buffer[1] = 0x05;
 			buffer[2] = (0x100 / info->chips) * i;
@@ -1804,7 +1804,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 	{
 		unsigned char buffer[] = {0x85, 0x00, 0x00, 0x00};
 		compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5); // chain inactive
-		for (i = 0; i < info->chips; i++) {
+		for (i = 0; i < (int)(info->chips); i++) {
 			buffer[0] = 0x01;
 			buffer[1] = (0x100 / info->chips) * i;
 			compac_send(compac, buffer, sizeof(buffer), 8 * sizeof(buffer) - 5);
