@@ -9,21 +9,31 @@ Install WSL:
 Either google 'WSL Ubuntu' or visit the Microsft store to download it for free:
  https://www.microsoft.com/store/productId/9NBLGGH4MSV6
 The 'Get' link will open the 'Microsoft Store' app on your Windows 10 computer
-
 If the above link has changed, go to https://ubuntu.com/wsl to get the link
 
 This will allow you to install WSL for Ubuntu
 
-After installing WSL, enable WSL under 'Windows Features'
+After installing WSL, make sure to enable WSL under 'Windows Features'
  - search 'Turn Windows Feaures on' using the windows search bar, at the bottom
  left, to find the 'Turn Windows features on or off' control panel
 In the control panel, scroll down and click on the check box
  'Windows Subsystem for Linux' to enable it, then on OK
 Windows may get some updates then require you to restart for the updates
 
-Once the computer update/restart has completed you will find a 'Ubuntu' option
+Once the computer update/restart has completed:
+Open a 'PowerShell' terminal as administrator.
+ You can do this by typing powershell in the windows search bar.
+ This should list various items including 'Windows PowerShell App' at the top.
+ Right click on it and select 'Run as administrator'
+
+In the PowerShell type:
+ wsl --install -d Ubuntu-22.04
+
+ N.B. there are problems with Ubuntu-24.04 so don't use 24.04, just use 22.04
+
+Once the computer updates have completed you will find a 'Ubuntu' option
  in the windows menu.
-Click on this to install Ubuntu
+If it hasn't already started, click on this to install Ubuntu
  When it's ready, be sure to give it a username and password you can remember.
 
 Now you will have a Ubuntu terminal login that you can run at any time
@@ -34,19 +44,29 @@ How to cross compile cgminer using MXE on WSL or linux
 
 ** Commands require internet access to download software
 
+** See the end for information about rebooting
+**  and upgrading your Ubuntu to a later release if required
+**  or you can just uninstall any Ubuntu you've already installed
+**  and start again to get Ubuntu-22.04
+
+** Normaly just do the following:
+
 ** In Ubuntu, issue the following commands:
  sudo apt update
 
 ** Update ubuntu packages with any recent updates:
  sudo apt upgrade -y
 
-** Check what version of Ubuntu you are running:
+** Reboot now
+ wsl.exe --terminate $WSL_DISTRO_NAME
+
+** Start Ubuntu again from the Windows Start Menu
+
+** To check what version of Ubuntu you are running:
  cat /etc/lsb-release
+** It should be 22.04 with another number after it e.g. 22.04.5
 
-** The steps below and mxe.sh work on Ubuntu 22.04 as at 2024-06
-
-** See the end for information about rebooting
-**  and upgrading your Ubuntu to a later release if required
+** The steps below and mxe.sh work on Ubuntu 22.04 as at 2025-07
 
 ** Install git that we use to download some of the required code.
 ** It may already be installed:
