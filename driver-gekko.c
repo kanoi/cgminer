@@ -271,8 +271,8 @@ static int compac_micro_send(struct cgpu_info *compac, uint8_t cmd, uint8_t chan
 static uint32_t bf_send2(struct cgpu_info *compac, unsigned char *req_tx, uint32_t bytes, bool iscmd, bool getreply, enum usb_cmds usbcmd, __maybe_unused char *msg)
 {
 	struct COMPAC_INFO *info = compac->device_data;
-	int send_bytes, read_bytes = 1;
-	unsigned int i, off, tmo = 20, req;
+	int i, send_bytes, read_bytes = 1;
+	unsigned int off, tmo = 20, req;
 	unsigned char cmd, tmp[64];
 	uint32_t err;
 
@@ -398,7 +398,7 @@ applog(LOG_ERR, "  %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %
 
 		off = 4;
 
-		for (i = 0; i < (int)send_bytes; i++)
+		for (i = 0; i < send_bytes; i++)
 			info->cmd[i+off] = req_tx[i+60];
 
 		send_bytes += off;
@@ -1499,7 +1499,7 @@ static void calc_gsa1_freq(struct cgpu_info *compac, float frequency)
 static void compac_send_chain_inactive(struct cgpu_info *compac)
 {
 	struct COMPAC_INFO *info = compac->device_data;
-	unsigned int i, j;
+	int i, j;
 
 	applog(LOG_ERR, "%d: %s %d - sending chain inactive for %d chip(s)",
 		compac->cgminer_id, compac->drv->name, compac->device_id, info->chips);
