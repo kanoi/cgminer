@@ -1,5 +1,7 @@
-Version 4.13.2 - 27 May 2025
+Version 4.13.3 - 31 Jul 2025
 
+- CompacA2 linux and windows tested version for release
+- GSA2 will also work with BM1368 chips
 - add GSA2 1 chip BM1370 USB
 - add tentative GSA2 4 chip BM1370 Pod
 
