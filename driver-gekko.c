@@ -2180,7 +2180,8 @@ static void compac_toggle_reset(struct cgpu_info *compac)
 
 		struct cp210x_gpio_w io;
 
-		usb_reset(compac);
+		if (info->ident != IDENT_GSA2)
+			usb_reset(compac);
 
 		io.mask = 0x07; // turn all 3 on
 		io.state = 0x07; // on -> chip off
@@ -3776,7 +3777,10 @@ gekko_usleep(info, MS2US(999));
 									compac->cgminer_id, compac->drv->name, compac->device_id,
 									reason ? : "", i, old_frequency);
 							}
-							info->mining_state = MINER_RESET;
+							if (info->asic_type == BM1370)
+								info->mining_state = MINER_REINIT;
+							else
+								info->mining_state = MINER_RESET;
 						}
 						// any plateau on 1 chip means no need to check the rest
 						break;
@@ -3850,7 +3854,10 @@ gekko_usleep(info, MS2US(999));
 							change_freq_any(compac, info->frequency_start);
 
 							// reset from start
-							info->mining_state = MINER_RESET;
+							if (info->asic_type == BM1370)
+								info->mining_state = MINER_REINIT;
+							else
+								info->mining_state = MINER_RESET;
 							mutex_unlock(&info->lock);
 
 							continue;
@@ -4113,7 +4120,10 @@ applog(LOG_ERR, "DBG BF sending work");
 			}
 			applog(LOG_WARNING, "%d: %s %d - usb failure (%d)",
 				compac->cgminer_id, compac->drv->name, compac->device_id, err);
-			info->mining_state = MINER_RESET;
+			if (info->asic_type == BM1370)
+				info->mining_state = MINER_REINIT;
+			else
+				info->mining_state = MINER_RESET;
 			continue;
 		}
 		else
@@ -4678,7 +4688,10 @@ static void *compac_telemetry(void *object)
 						if (info->reg_state == false)
 						{
 							// reset turns it on
-							info->mining_state = MINER_RESET;
+							if (info->asic_type == BM1370)
+								info->mining_state = MINER_REINIT;
+							else
+								info->mining_state = MINER_RESET;
 						}
 						// clear request states
 						info->reg_want_off = info->reg_want_on = false;
@@ -4737,7 +4750,10 @@ static void *compac_telemetry(void *object)
 								info->telem_temp);
 							info->cooldown = false;
 							// restart with a reset
-							info->mining_state = MINER_RESET;
+							if (info->asic_type == BM1370)
+								info->mining_state = MINER_REINIT;
+							else
+								info->mining_state = MINER_RESET;
 						}
 					}
 					else if (!info->cooldown && info->set_new_corev)
@@ -5186,7 +5202,12 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 							gsfa_reply(info, rx, info->rx_len, &now);
 					}
 					else
-						info->mining_state = MINER_RESET;
+					{
+						if (info->asic_type == BM1370)
+							info->mining_state = MINER_REINIT;
+						else
+							info->mining_state = MINER_RESET;
+					}
 				}
 				break;
 			 case MINER_MINING:
@@ -5254,7 +5275,12 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			if (info->mining_state == MINER_CHIP_COUNT_XX)
 			{
 				if (info->chips < info->expected_chips)
-					info->mining_state = MINER_RESET;
+				{
+					if (info->asic_type == BM1370)
+						info->mining_state = MINER_REINIT;
+					else
+						info->mining_state = MINER_RESET;
+				}
 				else
 				{
 					if (info->chips > 0)
@@ -5266,7 +5292,12 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 						mutex_unlock(&static_lock);
 					}
 					else
-						info->mining_state = MINER_RESET;
+					{
+						if (info->asic_type == BM1370)
+							info->mining_state = MINER_REINIT;
+						else
+							info->mining_state = MINER_RESET;
+					}
 				}
 			}
 		}
@@ -5446,7 +5477,10 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 				if (rx[0] != 0xf0 && rx[0] != 0xb2 && rx[0] != 0x00 && rx[0] != 0xb2)
 				{
 					// try again
-					info->mining_state = MINER_RESET;
+					if (info->asic_type == BM1370)
+						info->mining_state = MINER_REINIT;
+					else
+						info->mining_state = MINER_RESET;
 				}
 				else
 				{
@@ -5529,7 +5563,12 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			if (info->mining_state == MINER_CHIP_COUNT_XX)
 			{
 				if (info->chips < info->expected_chips)
-					info->mining_state = MINER_RESET;
+				{
+					if (info->asic_type == BM1370)
+						info->mining_state = MINER_REINIT;
+					else
+						info->mining_state = MINER_RESET;
+				}
 				else
 				{
 					if (info->chips > 0)
@@ -5541,7 +5580,12 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 						mutex_unlock(&static_lock);
 					}
 					else
-						info->mining_state = MINER_RESET;
+					{
+						if (info->asic_type == BM1370)
+							info->mining_state = MINER_REINIT;
+						else
+							info->mining_state = MINER_RESET;
+					}
 				}
 			}
 		}
@@ -6064,14 +6108,17 @@ static void enable_gsa1(struct cgpu_info *compac, struct COMPAC_INFO *info)
 
 	struct cp210x_gpio_w io;
 
-	usb_reset(compac);
+	if (info->ident != IDENT_GSA2)
+		usb_reset(compac);
 
 	usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_IFC_ENABLE,
 				CP210X_VALUE_UART_ENABLE, info->interface, NULL, 0, C_ENABLE_UART);
+
 	usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_DATA,
 				0x0101, info->interface, NULL, 0, C_SETDATA);
 	usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_BAUD,
 				0, info->interface, &baudrate, sizeof (baudrate), C_SETBAUD);
+
 	usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_SET_LINE_CTL,
 				bits, info->interface, NULL, 0, C_SETPARITY);
 
@@ -6112,139 +6159,157 @@ static int64_t compac_scanwork(struct thr_info *thr)
 #endif
 	cgtime(&now);
 
-	switch (info->mining_state) {
-		case MINER_INIT:
-			gekko_usleep(info, MS2US(50));
-			compac_flush_buffer(compac);
-			info->chips = 0;
-			info->ramping = 0;
-			info->frequency_syncd = 1;
-			if (info->frequency_start > info->frequency_requested) {
-				info->frequency_start = info->frequency_requested;
-			}
-			info->mining_state = MINER_CHIP_COUNT;
-			if (info->asic_type == BFCLAR)
-				compac_send_chain_inactive(compac);
-			return 0;
+	switch (info->mining_state)
+	{
+	 case MINER_REINIT:
+		// should only be BM1370
+		if (info->asic_type != BM1370)
+		{
+			info->mining_state = MINER_RESET;
 			break;
-		case MINER_CHIP_COUNT:
-			if (ms_tdiff(&now, &info->last_reset) > MS_SECOND_5) {
-				applog(LOG_INFO, "%d: %s %d - found 0 chip(s)", compac->cgminer_id, compac->drv->name, compac->device_id);
+		}
+		compac_toggle_reset(compac);
+		enable_gsa1(compac, info);
+		// fall though to INIT
+		info->mining_state = MINER_INIT;
+	 case MINER_INIT:
+		gekko_usleep(info, MS2US(50));
+		compac_flush_buffer(compac);
+		info->chips = 0;
+		info->ramping = 0;
+		info->frequency_syncd = 1;
+		if (info->frequency_start > info->frequency_requested)
+			info->frequency_start = info->frequency_requested;
+		info->mining_state = MINER_CHIP_COUNT;
+		if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
+			compac_send_chain_inactive(compac);
+		if (info->asic_type == BFCLAR)
+			compac_send_chain_inactive(compac);
+		return 0;
+		break;
+	 case MINER_CHIP_COUNT:
+		if (ms_tdiff(&now, &info->last_reset) > MS_SECOND_5)
+		{
+			applog(LOG_INFO, "%d: %s %d - found 0 chip(s)",
+				compac->cgminer_id, compac->drv->name, compac->device_id);
+			if (info->asic_type == BM1370)
+				info->mining_state = MINER_REINIT;
+			else
 				info->mining_state = MINER_RESET;
-				return 0;
-			}
-			gekko_usleep(info, MS2US(10));
-			break;
-		case MINER_CHIP_COUNT_OK:
-			// telemetry handles this
-			if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
-				return 0;
+			return 0;
+		}
+		gekko_usleep(info, MS2US(10));
+		break;
+	 case MINER_CHIP_COUNT_OK:
+		// telemetry handles this
+		if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
+			return 0;
 
+		gekko_usleep(info, MS2US(50));
+		//compac_set_frequency(compac, info->frequency_start);
+		compac_send_chain_inactive(compac);
+
+		if (info->asic_type == BM1397)
+			info->mining_state = MINER_OPEN_CORE_OK;
+
+		return 0;
+		break;
+	 case MINER_OPEN_CORE:
+		if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
+		{
+			// after telemetry
 			gekko_usleep(info, MS2US(50));
 			//compac_set_frequency(compac, info->frequency_start);
 			compac_send_chain_inactive(compac);
-
-			if (info->asic_type == BM1397)
-				info->mining_state = MINER_OPEN_CORE_OK;
-
+			info->zero_check = 0;
+			info->task_hcn = 0;
+			if (info->ident == IDENT_GSA2)
+				compac_set_frequency(compac, info->frequency_start);
+			info->mining_state = MINER_OPEN_CORE_OK;
 			return 0;
-			break;
-		case MINER_OPEN_CORE:
-			if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
-			{
-				// after telemetry
-				gekko_usleep(info, MS2US(50));
-				//compac_set_frequency(compac, info->frequency_start);
-				compac_send_chain_inactive(compac);
-				info->zero_check = 0;
-				info->task_hcn = 0;
-				if (info->ident == IDENT_GSA2)
-					compac_set_frequency(compac, info->frequency_start);
-				info->mining_state = MINER_OPEN_CORE_OK;
-				return 0;
-			}
+		}
 
-			info->job_id = info->ramping % (info->max_job_id + 1);
+		info->job_id = info->ramping % (info->max_job_id + 1);
 
-			//info->task_hcn = (0xffffffff / info->chips) * (1 + info->ramping) / info->cores;
-			init_task(info);
-			dumpbuffer(compac, LOG_DEBUG, "RAMP", info->task, info->task_len);
+		//info->task_hcn = (0xffffffff / info->chips) * (1 + info->ramping) / info->cores;
+		init_task(info);
+		dumpbuffer(compac, LOG_DEBUG, "RAMP", info->task, info->task_len);
 
-			usb_write(compac, (char *)info->task, info->task_len, &read_bytes, C_SENDWORK);
-			if (info->ramping > (info->cores * info->add_job_id)) {
-				//info->job_id = 0;
-				info->mining_state = MINER_OPEN_CORE_OK;
-				info->task_hcn = (0xffffffff / info->chips);
-				return 0;
-			}
-
-			info->ramping += info->add_job_id;
-			info->task_ms = (info->task_ms * 9 + ms_tdiff(&now, &info->last_task)) / 10;
-			cgtime(&info->last_task);
-			gekko_usleep(info, MS2US(10));
+		usb_write(compac, (char *)info->task, info->task_len, &read_bytes, C_SENDWORK);
+		if (info->ramping > (info->cores * info->add_job_id)) {
+			//info->job_id = 0;
+			info->mining_state = MINER_OPEN_CORE_OK;
+			info->task_hcn = (0xffffffff / info->chips);
 			return 0;
-			break;
-		case MINER_OPEN_CORE_OK:
-			applog(LOG_INFO, "%d: %s %d - start work", compac->cgminer_id, compac->drv->name, compac->device_id);
-			if (info->asic_type == BM1397)
-				gsf_calc_nb2c(compac);
-			cgtime(&info->start_time);
-			cgtime(&info->monitor_time);
-			cgtime(&info->last_frequency_adjust);
-			info->last_dup_time = (struct timeval){0};
-			cgtime(&info->last_frequency_report);
-			cgtime(&info->last_micro_ping);
-			cgtime(&info->last_nonce);
-			compac_flush_buffer(compac);
-			compac_update_rates(compac);
-			info->update_work = 1;
-			info->mining_state = MINER_MINING;
-			return 0;
-			break;
-		case MINER_MINING:
-			break;
-		case MINER_RESET:
-			compac_flush_work(compac);
-			if (info->asic_type == BM1387 || info->asic_type == BM1397)
-			{
-				compac_toggle_reset(compac);
-			}
-			else if (info->asic_type == BM1362 || info->asic_type == BM1370)
-			{
-				compac_toggle_reset(compac);
-				enable_gsa1(compac, info);
-				compac_set_frequency(compac, info->frequency_default);
-			}
-			else if (info->asic_type == BM1384)
-			{
-				compac_set_frequency(compac, info->frequency_default);
-				//compac_send_chain_inactive(compac);
-			}
-			compac_prepare(thr);
+		}
 
-			info->fail_count++;
-			info->dupsreset = 0;
-			info->mining_state = MINER_INIT;
-			cgtime(&info->last_reset);
-			// in case clock jumps back ...
-			cgtime(&info->tune_limit);
+		info->ramping += info->add_job_id;
+		info->task_ms = (info->task_ms * 9 + ms_tdiff(&now, &info->last_task)) / 10;
+		cgtime(&info->last_task);
+		gekko_usleep(info, MS2US(10));
+		return 0;
+		break;
+	 case MINER_OPEN_CORE_OK:
+		applog(LOG_INFO, "%d: %s %d - start work", compac->cgminer_id, compac->drv->name, compac->device_id);
+		if (info->asic_type == BM1397)
+			gsf_calc_nb2c(compac);
+		cgtime(&info->start_time);
+		cgtime(&info->monitor_time);
+		cgtime(&info->last_frequency_adjust);
+		info->last_dup_time = (struct timeval){0};
+		cgtime(&info->last_frequency_report);
+		cgtime(&info->last_micro_ping);
+		cgtime(&info->last_nonce);
+		compac_flush_buffer(compac);
+		compac_update_rates(compac);
+		info->update_work = 1;
+		info->mining_state = MINER_MINING;
+		return 0;
+		break;
+	 case MINER_MINING:
+		break;
+	 case MINER_RESET:
+		compac_flush_work(compac);
+		if (info->asic_type == BM1387 || info->asic_type == BM1397)
+		{
+			compac_toggle_reset(compac);
+		}
+		else if (info->asic_type == BM1362 || info->asic_type == BM1370)
+		{
+			compac_toggle_reset(compac);
+			enable_gsa1(compac, info);
+			compac_set_frequency(compac, info->frequency_default);
+		}
+		else if (info->asic_type == BM1384)
+		{
+			compac_set_frequency(compac, info->frequency_default);
+			//compac_send_chain_inactive(compac);
+		}
+		compac_prepare(thr);
 
-			// wipe info->gh/asic->gc
-			gh_offset(info, &now, true, false);
-			// wipe info->job
-			job_offset(info, &now, true, false);
-			// reset P:
-			info->frequency_computed = 0;
-			// force retry setup if miner should have telemetry
-			info->has_telem = false;
-			info->fail_telem = 0;
-			return 0;
-			break;
-		case MINER_MINING_DUPS:
-			info->mining_state = MINER_MINING;
-			break;
-		default:
-			break;
+		info->fail_count++;
+		info->dupsreset = 0;
+		info->mining_state = MINER_INIT;
+		cgtime(&info->last_reset);
+		// in case clock jumps back ...
+		cgtime(&info->tune_limit);
+
+		// wipe info->gh/asic->gc
+		gh_offset(info, &now, true, false);
+		// wipe info->job
+		job_offset(info, &now, true, false);
+		// reset P:
+		info->frequency_computed = 0;
+		// force retry setup if miner should have telemetry
+		info->has_telem = false;
+		info->fail_telem = 0;
+		return 0;
+		break;
+	 case MINER_MINING_DUPS:
+		info->mining_state = MINER_MINING;
+		break;
+	 default:
+		break;
 	}
 
 	mutex_lock(&info->lock);
@@ -7228,7 +7293,10 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	if (strcasecmp(option, "reset") == 0)
 	{
 		// will cause various problems ...
-		info->mining_state = MINER_RESET;
+		if (info->asic_type == BM1370)
+			info->mining_state = MINER_REINIT;
+		else
+			info->mining_state = MINER_RESET;
 		return NULL;
 	}
 

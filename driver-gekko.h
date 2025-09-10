@@ -43,7 +43,8 @@ enum miner_state {
 	MINER_MINING_DUPS,	// 8
 	MINER_SHUTDOWN,		// 9
 	MINER_SHUTDOWN_OK,	// 10
-	MINER_RESET		// 11
+	MINER_RESET,		// 11
+	MINER_REINIT		// 12
 };
 
 enum miner_asic {
