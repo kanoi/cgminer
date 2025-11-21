@@ -5069,8 +5069,8 @@ libusb_ign_tmo = 1;
 #if IGNTMO
 libusb_ign_tmo = prev;
 #endif
-//		if (read_bytes > 0)
-//			dumpbuffer(compac, LOG_INFO, "RX", rx+pos, read_bytes);
+		if (read_bytes > 0)
+			dumpbuffer(compac, LOG_INFO, "RX", rx+pos, read_bytes);
 		pos += read_bytes;
 
 		cgtime(&now);
