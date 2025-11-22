@@ -385,6 +385,7 @@ struct COMPAC_INFO {
 	bool reg_state;			// telemetry regulator state
 	bool reg_want_off;		// telemetry regulator requested off (e.g. freq=0)
 	bool reg_want_on;		// telemetry regulator requested on (e.g. freq>0 and not cooldown)
+	bool reset_reinit;		// do resets with reinit (default no)
 
 	float freq_mult;	     // frequency multiplier
 	float freq_base;	     // frequency mod value

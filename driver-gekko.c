@@ -2180,8 +2180,7 @@ static void compac_toggle_reset(struct cgpu_info *compac)
 
 		struct cp210x_gpio_w io;
 
-		if (info->ident != IDENT_GSA2)
-			usb_reset(compac);
+		usb_reset(compac);
 
 		io.mask = 0x07; // turn all 3 on
 		io.state = 0x07; // on -> chip off
@@ -3777,7 +3776,7 @@ gekko_usleep(info, MS2US(999));
 									compac->cgminer_id, compac->drv->name, compac->device_id,
 									reason ? : "", i, old_frequency);
 							}
-							if (info->asic_type == BM1370)
+							if (info->reset_reinit)
 								info->mining_state = MINER_REINIT;
 							else
 								info->mining_state = MINER_RESET;
@@ -3854,7 +3853,7 @@ gekko_usleep(info, MS2US(999));
 							change_freq_any(compac, info->frequency_start);
 
 							// reset from start
-							if (info->asic_type == BM1370)
+							if (info->reset_reinit)
 								info->mining_state = MINER_REINIT;
 							else
 								info->mining_state = MINER_RESET;
@@ -4120,7 +4119,7 @@ applog(LOG_ERR, "DBG BF sending work");
 			}
 			applog(LOG_WARNING, "%d: %s %d - usb failure (%d)",
 				compac->cgminer_id, compac->drv->name, compac->device_id, err);
-			if (info->asic_type == BM1370)
+			if (info->reset_reinit)
 				info->mining_state = MINER_REINIT;
 			else
 				info->mining_state = MINER_RESET;
@@ -4688,7 +4687,7 @@ static void *compac_telemetry(void *object)
 						if (info->reg_state == false)
 						{
 							// reset turns it on
-							if (info->asic_type == BM1370)
+							if (info->reset_reinit)
 								info->mining_state = MINER_REINIT;
 							else
 								info->mining_state = MINER_RESET;
@@ -4750,7 +4749,7 @@ static void *compac_telemetry(void *object)
 								info->telem_temp);
 							info->cooldown = false;
 							// restart with a reset
-							if (info->asic_type == BM1370)
+							if (info->reset_reinit)
 								info->mining_state = MINER_REINIT;
 							else
 								info->mining_state = MINER_RESET;
@@ -5203,7 +5202,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 					}
 					else
 					{
-						if (info->asic_type == BM1370)
+						if (info->reset_reinit)
 							info->mining_state = MINER_REINIT;
 						else
 							info->mining_state = MINER_RESET;
@@ -5276,7 +5275,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			{
 				if (info->chips < info->expected_chips)
 				{
-					if (info->asic_type == BM1370)
+					if (info->reset_reinit)
 						info->mining_state = MINER_REINIT;
 					else
 						info->mining_state = MINER_RESET;
@@ -5293,7 +5292,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 					}
 					else
 					{
-						if (info->asic_type == BM1370)
+						if (info->reset_reinit)
 							info->mining_state = MINER_REINIT;
 						else
 							info->mining_state = MINER_RESET;
@@ -5477,7 +5476,7 @@ applog(LOG_ERR, " %s %d dump before %d=0xaa [%02x %02x %02x %02x ...]",
 				if (rx[0] != 0xf0 && rx[0] != 0xb2 && rx[0] != 0x00 && rx[0] != 0xb2)
 				{
 					// try again
-					if (info->asic_type == BM1370)
+					if (info->reset_reinit)
 						info->mining_state = MINER_REINIT;
 					else
 						info->mining_state = MINER_RESET;
@@ -5564,7 +5563,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 			{
 				if (info->chips < info->expected_chips)
 				{
-					if (info->asic_type == BM1370)
+					if (info->reset_reinit)
 						info->mining_state = MINER_REINIT;
 					else
 						info->mining_state = MINER_RESET;
@@ -5581,7 +5580,7 @@ applog(LOG_ERR, " [%02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x]"
 					}
 					else
 					{
-						if (info->asic_type == BM1370)
+						if (info->reset_reinit)
 							info->mining_state = MINER_REINIT;
 						else
 							info->mining_state = MINER_RESET;
@@ -6108,8 +6107,7 @@ static void enable_gsa1(struct cgpu_info *compac, struct COMPAC_INFO *info)
 
 	struct cp210x_gpio_w io;
 
-	if (info->ident != IDENT_GSA2)
-		usb_reset(compac);
+	usb_reset(compac);
 
 	usb_transfer_data(compac, CP210X_TYPE_OUT, CP210X_REQUEST_IFC_ENABLE,
 				CP210X_VALUE_UART_ENABLE, info->interface, NULL, 0, C_ENABLE_UART);
@@ -6133,6 +6131,8 @@ static void enable_gsa1(struct cgpu_info *compac, struct COMPAC_INFO *info)
 	cgsleep_ms(100);
 	// gpio turns on the regulator
 	info->reg_state = true;
+
+	cgtime(&info->last_reset);
 }
 
 static int64_t compac_scanwork(struct thr_info *thr)
@@ -6162,7 +6162,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 	switch (info->mining_state)
 	{
 	 case MINER_REINIT:
-		// should only be BM1370
+		// for now should only be BM1370
 		if (info->asic_type != BM1370)
 		{
 			info->mining_state = MINER_RESET;
@@ -6181,8 +6181,6 @@ static int64_t compac_scanwork(struct thr_info *thr)
 		if (info->frequency_start > info->frequency_requested)
 			info->frequency_start = info->frequency_requested;
 		info->mining_state = MINER_CHIP_COUNT;
-		if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
-			compac_send_chain_inactive(compac);
 		if (info->asic_type == BFCLAR)
 			compac_send_chain_inactive(compac);
 		return 0;
@@ -6192,7 +6190,7 @@ static int64_t compac_scanwork(struct thr_info *thr)
 		{
 			applog(LOG_INFO, "%d: %s %d - found 0 chip(s)",
 				compac->cgminer_id, compac->drv->name, compac->device_id);
-			if (info->asic_type == BM1370)
+			if (info->reset_reinit)
 				info->mining_state = MINER_REINIT;
 			else
 				info->mining_state = MINER_RESET;
@@ -6438,6 +6436,7 @@ static struct cgpu_info *compac_detect_one(struct libusb_device *dev, struct usb
 			break;
 		case IDENT_GSA2:
 			info->asic_type = BM1370;
+			info->reset_reinit = true;
 			info->expected_chips = 1;
 			enable_gsa1(compac, info);
 			break;
@@ -7293,7 +7292,7 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	if (strcasecmp(option, "reset") == 0)
 	{
 		// will cause various problems ...
-		if (info->asic_type == BM1370)
+		if (info->reset_reinit)
 			info->mining_state = MINER_REINIT;
 		else
 			info->mining_state = MINER_RESET;
