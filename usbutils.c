@@ -4108,22 +4108,54 @@ void usb_cleanup(void)
 	for (i = 0; i < total_devices; i++) {
 		cgpu = devices[i];
 		switch (cgpu->drv->drv_id) {
+#ifdef USE_BFLSC
 			case DRIVER_bflsc:
+#endif
+#ifdef USE_BITFORCE
 			case DRIVER_bitforce:
+#endif
+#ifdef USE_BITFURY
 			case DRIVER_bitfury:
+#endif
+#ifdef USE_COINTERRA
 			case DRIVER_cointerra:
+#endif
+#ifdef USE_DRILLBIT
 			case DRIVER_drillbit:
+#endif
+#ifdef USE_GEKKO
 			case DRIVER_gekko:
+#endif
+#ifdef USE_MODMINER
 			case DRIVER_modminer:
+#endif
+#ifdef USE_ICARUS
 			case DRIVER_icarus:
+#endif
+#ifdef USE_AVALON
 			case DRIVER_avalon:
+#endif
+#ifdef USE_AVALON2
 			case DRIVER_avalon2:
+#endif
+#ifdef USE_AVALON4
 			case DRIVER_avalon4:
+#endif
+#ifdef USE_AVALON7
 			case DRIVER_avalon7:
+#endif
+#ifdef USE_AVALON8
 			case DRIVER_avalon8:
+#endif
+#ifdef USE_AVALON_MINER
 			case DRIVER_avalonm:
+#endif
+#ifdef USE_KLONDIKE
 			case DRIVER_klondike:
+#endif
+#ifdef USE_HASHFAST
 			case DRIVER_hashfast:
+#endif
 				DEVWLOCK(cgpu, pstate);
 				release_cgpu(cgpu);
 				DEVWUNLOCK(cgpu, pstate);

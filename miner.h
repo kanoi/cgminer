@@ -252,47 +252,234 @@ static inline int fsync (int fd)
  * trying to claim same chip but different devices. Adding a device here will
  * update all macros in the code that use the *_PARSE_COMMANDS macros for each
  * listed driver. */
+
+#ifdef USE_BITFORCE
+#define DRIVER_bitforce(X) X(bitforce)
+#else
+#define DRIVER_bitforce(X)
+#endif
+
+#ifdef USE_MODMINER
+#define DRIVER_modminer(X) X(modminer)
+#else
+#define DRIVER_modminer(X)
+#endif
+
+#ifdef USE_ANT_S1
+#define DRIVER_ants1(X) X(ants1)
+#else
+#define DRIVER_ants1(X)
+#endif
+
+#ifdef USE_ANT_S2
+#define DRIVER_ants2(X) X(ants2)
+#else
+#define DRIVER_ants2(X)
+#endif
+
+#ifdef USE_ANT_S3
+#define DRIVER_ants3(X) X(ants3)
+#else
+#define DRIVER_ants3(X)
+#endif
+
+#ifdef USE_AVALON
+#define DRIVER_avalon(X) X(avalon)
+#else
+#define DRIVER_avalon(X)
+#endif
+
+#ifdef USE_AVALON2
+#define DRIVER_avalon2(X) X(avalon2)
+#else
+#define DRIVER_avalon2(X)
+#endif
+
+#ifdef USE_AVALON4
+#define DRIVER_avalon4(X) X(avalon4)
+#else
+#define DRIVER_avalon4(X)
+#endif
+
+#ifdef USE_AVALON7
+#define DRIVER_avalon7(X) X(avalon7)
+#else
+#define DRIVER_avalon7(X)
+#endif
+
+#ifdef USE_AVALON8
+#define DRIVER_avalon8(X) X(avalon8)
+#else
+#define DRIVER_avalon8(X)
+#endif
+
+#ifdef USE_AVALON_MINER
+#define DRIVER_avalonm(X) X(avalonm)
+#else
+#define DRIVER_avalonm(X)
+#endif
+
+#ifdef USE_BAB
+#define DRIVER_bab(X) X(bab)
+#else
+#define DRIVER_bab(X)
+#endif
+
+#ifdef USE_BFLSC
+#define DRIVER_bflsc(X) X(bflsc)
+#else
+#define DRIVER_bflsc(X)
+#endif
+
+#ifdef USE_BITFURY
+#define DRIVER_bitfury(X) X(bitfury)
+#else
+#define DRIVER_bitfury(X)
+#endif
+
+#ifdef USE_BITFURY16
+#define DRIVER_bitfury16(X) X(bitfury16)
+#else
+#define DRIVER_bitfury16(X)
+#endif
+
+#ifdef USE_BITMINE_A1
+#define DRIVER_bitmineA1(X) X(bitmineA1)
+#else
+#define DRIVER_bitmineA1(X)
+#endif
+
+#ifdef USE_BLOCKERUPTER
+#define DRIVER_blockerupter(X) X(blockerupter)
+#else
+#define DRIVER_blockerupter(X)
+#endif
+
+#ifdef USE_COINTERRA
+#define DRIVER_cointerra(X) X(cointerra)
+#else
+#define DRIVER_cointerra(X)
+#endif
+
+#ifdef USE_FLOW
+#define DRIVER_flow(X) X(flow)
+#else
+#define DRIVER_flow(X)
+#endif
+
+#ifdef USE_GEKKO
+#define DRIVER_gekko(X) X(gekko)
+#else
+#define DRIVER_gekko(X)
+#endif
+
+#ifdef USE_DRAGONMINT_T1
+#define DRIVER_dragonmintT1(X) X(dragonmintT1)
+#else
+#define DRIVER_dragonmintT1(X)
+#endif
+
+#ifdef USE_HASHFAST
+#define DRIVER_hashfast(X) X(hashfast)
+#else
+#define DRIVER_hashfast(X)
+#endif
+
+#ifdef USE_DRILLBIT
+#define DRIVER_drillbit(X) X(drillbit)
+#else
+#define DRIVER_drillbit(X)
+#endif
+
+#ifdef USE_HASHRATIO
+#define DRIVER_hashratio(X) X(hashratio)
+#else
+#define DRIVER_hashratio(X)
+#endif
+
+#ifdef USE_ICARUS
+#define DRIVER_icarus(X) X(icarus)
+#else
+#define DRIVER_icarus(X)
+#endif
+
+#ifdef USE_KLONDIKE
+#define DRIVER_klondike(X) X(klondike)
+#else
+#define DRIVER_klondike(X)
+#endif
+
+#ifdef USE_KNC
+#define DRIVER_knc(X) X(knc)
+#else
+#define DRIVER_knc(X)
+#endif
+
+#ifdef USE_MINION
+#define DRIVER_minion(X) X(minion)
+#else
+#define DRIVER_minion(X)
+#endif
+
+#ifdef USE_SP10
+#define DRIVER_sp10(X) X(sp10)
+#else
+#define DRIVER_sp10(X)
+#endif
+
+#ifdef USE_SP30
+#define DRIVER_sp30(X) X(sp30)
+#else
+#define DRIVER_sp30(X)
+#endif
+
+#ifdef USE_BITMAIN_SOC
+#define DRIVER_bitmain_soc(X) X(bitmain_soc)
+#else
+#define DRIVER_bitmain_soc(X)
+#endif
+
 #define FPGA_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
-	DRIVER_ADD_COMMAND(bitforce) \
-	DRIVER_ADD_COMMAND(modminer)
+	DRIVER_bitforce(DRIVER_ADD_COMMAND) \
+	DRIVER_modminer(DRIVER_ADD_COMMAND)
 
 #define ASIC_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
-	DRIVER_ADD_COMMAND(ants1) \
-	DRIVER_ADD_COMMAND(ants2) \
-	DRIVER_ADD_COMMAND(ants3) \
-	DRIVER_ADD_COMMAND(avalon) \
-	DRIVER_ADD_COMMAND(avalon2) \
-	DRIVER_ADD_COMMAND(avalon4) \
-	DRIVER_ADD_COMMAND(avalon7) \
-	DRIVER_ADD_COMMAND(avalon8) \
-	DRIVER_ADD_COMMAND(avalonm) \
-	DRIVER_ADD_COMMAND(bab) \
-	DRIVER_ADD_COMMAND(bflsc) \
-	DRIVER_ADD_COMMAND(bitfury) \
-	DRIVER_ADD_COMMAND(bitfury16) \
-	DRIVER_ADD_COMMAND(bitmineA1) \
-	DRIVER_ADD_COMMAND(blockerupter) \
-	DRIVER_ADD_COMMAND(cointerra) \
-	DRIVER_ADD_COMMAND(flow) \
-	DRIVER_ADD_COMMAND(gekko) \
-	DRIVER_ADD_COMMAND(dragonmintT1) \
-	DRIVER_ADD_COMMAND(hashfast) \
-	DRIVER_ADD_COMMAND(drillbit) \
-	DRIVER_ADD_COMMAND(hashratio) \
-	DRIVER_ADD_COMMAND(icarus) \
-	DRIVER_ADD_COMMAND(klondike) \
-	DRIVER_ADD_COMMAND(knc) \
-	DRIVER_ADD_COMMAND(minion) \
-	DRIVER_ADD_COMMAND(sp10) \
-	DRIVER_ADD_COMMAND(sp30) \
-	DRIVER_ADD_COMMAND(bitmain_soc)
+	DRIVER_ants1(DRIVER_ADD_COMMAND) \
+	DRIVER_ants2(DRIVER_ADD_COMMAND) \
+	DRIVER_ants3(DRIVER_ADD_COMMAND) \
+	DRIVER_avalon(DRIVER_ADD_COMMAND) \
+	DRIVER_avalon2(DRIVER_ADD_COMMAND) \
+	DRIVER_avalon4(DRIVER_ADD_COMMAND) \
+	DRIVER_avalon7(DRIVER_ADD_COMMAND) \
+	DRIVER_avalon8(DRIVER_ADD_COMMAND) \
+	DRIVER_avalonm(DRIVER_ADD_COMMAND) \
+	DRIVER_bab(DRIVER_ADD_COMMAND) \
+	DRIVER_bflsc(DRIVER_ADD_COMMAND) \
+	DRIVER_bitfury(DRIVER_ADD_COMMAND) \
+	DRIVER_bitfury16(DRIVER_ADD_COMMAND) \
+	DRIVER_bitmineA1(DRIVER_ADD_COMMAND) \
+	DRIVER_blockerupter(DRIVER_ADD_COMMAND) \
+	DRIVER_cointerra(DRIVER_ADD_COMMAND) \
+	DRIVER_flow(DRIVER_ADD_COMMAND) \
+	DRIVER_gekko(DRIVER_ADD_COMMAND) \
+	DRIVER_dragonmintT1(DRIVER_ADD_COMMAND) \
+	DRIVER_hashfast(DRIVER_ADD_COMMAND) \
+	DRIVER_drillbit(DRIVER_ADD_COMMAND) \
+	DRIVER_hashratio(DRIVER_ADD_COMMAND) \
+	DRIVER_icarus(DRIVER_ADD_COMMAND) \
+	DRIVER_klondike(DRIVER_ADD_COMMAND) \
+	DRIVER_knc(DRIVER_ADD_COMMAND) \
+	DRIVER_minion(DRIVER_ADD_COMMAND) \
+	DRIVER_sp10(DRIVER_ADD_COMMAND) \
+	DRIVER_sp30(DRIVER_ADD_COMMAND) \
+	DRIVER_bitmain_soc(DRIVER_ADD_COMMAND)
 
 #define DRIVER_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
 	FPGA_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
 	ASIC_PARSE_COMMANDS(DRIVER_ADD_COMMAND)
 
 #define DRIVER_ENUM(X) DRIVER_##X,
-#define DRIVER_PROTOTYPE(X) struct device_drv X##_drv;
+#define DRIVER_PROTOTYPE(X) extern struct device_drv X##_drv;
 
 /* Create drv_driver enum from DRIVER_PARSE_COMMANDS macro */
 enum drv_driver {
