@@ -1752,12 +1752,15 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		unsigned char inita[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x8b, 0x00, 0x00};
 		unsigned char initb[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x80, 0x0e, 0x00};
 		unsigned char initc[] = {0x51, 0x09, 0x00, 0x3c, 0x80, 0x00, 0x82, 0xaa, 0x00};
+		unsigned char initd[] = {0x51, 0x09, 0x00, 0x54, 0x00, 0x00, 0x00, 0x03, 0x00};
 
 		compac_send2(compac, inita, sizeof(inita), 8 * sizeof(inita) - 8, "inita");
 		gekko_usleep(info, MS2US(10));
 		compac_send2(compac, initb, sizeof(initb), 8 * sizeof(initb) - 8, "initb");
 		gekko_usleep(info, MS2US(10));
 		compac_send2(compac, initc, sizeof(initc), 8 * sizeof(initc) - 8, "initc");
+		gekko_usleep(info, MS2US(10));
+		compac_send2(compac, initc, sizeof(initd), 8 * sizeof(initc) - 8, "initc");
 		gekko_usleep(info, MS2US(10));
 	}
 	else if (info->asic_type == BM1387)

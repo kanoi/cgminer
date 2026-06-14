@@ -1,6 +1,10 @@
+Version 4.13.6 - 15 Jun 2026
+
+- Gekko add BM die temp sensor init so telementry versions can use it
+
 Version 4.13.5 - 22 Nov 2025
 
-- fix chip count bug in 4.13.4 for CompacA1 N.B. A1 is not a production Gekko
+- fix chip count bug in 4.13.4 for CompacA1
 
 Version 4.13.4 - 10 Sep 2025
 
