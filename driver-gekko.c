@@ -4241,11 +4241,18 @@ static unsigned char corev_totelem(int corev)
 }
 
 // same calc for both iin and iout
-static float telem_toiinout(unsigned char ch)
+static float telem_toiinout(unsigned char ch, bool hi)
 {
 	// value 0..255
-	// linear current 0..(2.048*20)
-	return (float)(ch) * (2.048 / 255.0) * 20.0;
+	// hi linear current 0..(2.048*20) (40.96)
+	// lo linear current 0..(2.048*3.125) (6.4)
+	float factor;
+	if (hi)
+		factor = 20.0;
+	else
+		factor = 3.125;
+
+	return (float)(ch) * (2.048 / 255.0) * factor;
 }
 
 static float telem_totach(unsigned char ch)
@@ -4589,14 +4596,24 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 		if (TELEM_IS_V2(info))
 		{
 			if (read_bytes > TELEM_IIN)
-				info->telem_iin = telem_toiinout(rx[TELEM_IIN]);
+			{
+				if (TELEM_VALUE(info) == 0)
+				{
+					info->telem_iin = telem_toiinout(rx[TELEM_IIN], true);
+				}
+				else
+				{
+					// with V2.1 iin range is hi=false lo
+					info->telem_iin = telem_toiinout(rx[TELEM_IIN], false);
+				}
+			}
 			if (read_bytes > TELEM_TACH)
 				info->telem_tach = telem_totach(rx[TELEM_TACH]);
 
 			if (TELEM_VALUE(info) == 0)
 			{
 				if (read_bytes > TELEM_IOUT)
-					info->telem_iout = telem_toiinout(rx[TELEM_IOUT]);
+					info->telem_iout = telem_toiinout(rx[TELEM_IOUT], true);
 				info->telem_temp2 = 0;
 			}
 			else

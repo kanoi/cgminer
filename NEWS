@@ -1,6 +1,7 @@
 Version 4.13.6 - 15 Jun 2026
 
-- Gekko add BM die temp sensor init so telementry versions can use it
+- Gekko add BM die temp sensor init so telemetry versions can use it
+- Gekko correct telemetry V2.1 input current calc
 
 Version 4.13.5 - 22 Nov 2025
 
