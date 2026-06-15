@@ -1760,7 +1760,7 @@ static void compac_send_chain_inactive(struct cgpu_info *compac)
 		gekko_usleep(info, MS2US(10));
 		compac_send2(compac, initc, sizeof(initc), 8 * sizeof(initc) - 8, "initc");
 		gekko_usleep(info, MS2US(10));
-		compac_send2(compac, initc, sizeof(initd), 8 * sizeof(initc) - 8, "initc");
+		compac_send2(compac, initd, sizeof(initd), 8 * sizeof(initc) - 8, "initd");
 		gekko_usleep(info, MS2US(10));
 	}
 	else if (info->asic_type == BM1387)
