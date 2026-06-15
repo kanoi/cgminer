@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2025 kano
+ * Copyright 2021-2026 kano
  * Copyright 2017-2021 vh
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -204,8 +204,43 @@ static int cur_attempt_1370[] = { 0, -24, -48, -72 };
 #define TELEM_IS_V2(_info) (TELEM_VERSION(_info) == 0x20)
 #define TELEM_IS_V2_1(_info) ((TELEM_VERSION(_info) == 0x20) \
 				&& (TELEM_VALUE(_info) == 0x01))
+#define TELEM_IS_V3(_info) (TELEM_VERSION(_info) == 0x30)
 
-#define TELEM_VALID(_info) (TELEM_IS_V1(_info) || TELEM_IS_V2(_info))
+#define TELEM_VALID(_info) (TELEM_IS_V1(_info) || TELEM_IS_V2(_info) || TELEM_IS_V3(_info))
+
+// Telemetry returned data
+#define TELEM_VIN 0
+#define TELEM_IIN 1
+#define TELEM_VOUT 2
+#define TELEM_IOUT 3
+#define TELEM_TEMP1 4
+#define TELEM_TEMP2 5
+#define TELEM_TACH 6
+
+// Telemetry v3 mask info
+#define MAKE_MASK(_telem_val) (0x1 >> (_telem_val))
+
+#define TELEM_MASK_VIN MAKE_MASK(TELEM_VIN)
+#define TELEM_MASK_IIN MAKE_MASK(TELEM_IIN)
+#define TELEM_MASK_VOUT MAKE_MASK(TELEM_VOUT)
+#define TELEM_MASK_IOUT MAKE_MASK(TELEM_IOUT)
+#define TELEM_MASK_TEMP1 MAKE_MASK(TELEM_TEMP1)
+#define TELEM_MASK_TEMP2 MAKE_MASK(TELEM_TEMP2)
+#define TELEM_MASK_TACH MAKE_MASK(TELEM_TACH)
+#define TELEM_MASK_HIAMP 0x80
+
+#define TELEM_HAS(_info, _m) (((_info)->telem_mask) & (_m))
+
+#define TELEM_HAS_VIN(_info) (TELEM_HAS((_info), (TELEM_MASK_VIN)))
+#define TELEM_HAS_IIN(_info) (TELEM_HAS((_info), (TELEM_MASK_IIN)))
+#define TELEM_HAS_VOUT(_info) (TELEM_HAS((_info), (TELEM_MASK_VOUT)))
+#define TELEM_HAS_IOUT(_info) (TELEM_HAS((_info), (TELEM_MASK_IOUT)))
+#define TELEM_HAS_TEMP1(_info) (TELEM_HAS((_info), (TELEM_MASK_TEMP1)))
+#define TELEM_HAS_TEMP2(_info) (TELEM_HAS((_info), (TELEM_MASK_TEMP2)))
+#define TELEM_HAS_TACH(_info) (TELEM_HAS((_info), (TELEM_MASK_TACH)))
+
+#define TELEM_HAS_HIAMP(_info) (TELEM_HAS((_info), (TELEM_MASK_HIAMP)))
+#define TELEM_HAS_LOAMP(_info) (!(TELEM_HAS_HIAMP(_info)))
 
 // BM1397 registers
 #define BM1397FREQ 0x08
@@ -363,6 +398,7 @@ struct COMPAC_INFO {
 	int fail_telem;			// number of times init failed (reset will zero it)
 	bool has_telem;			// telemetry mcu is present and working
 	unsigned char telem_version;	// telemetry version
+	int telem_mask;			// v3+ mask says what data is available
 	int telem_corev;		// last mV value set
 	int telem_corev_def;		// default corev
 	float telem_temp;		// telemetry reported temp

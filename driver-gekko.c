@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2025 kano
+ * Copyright 2021-2026 kano
  * Copyright 2021-2024 sidehack
  * Copyright 2017-2021 vh
  *
@@ -4435,6 +4435,40 @@ static bool gsa2_set_fan(struct cgpu_info *compac, struct COMPAC_INFO *info, int
 	return true;
 }
 
+static void get_telem_mask(struct cgpu_info *compac, struct COMPAC_INFO *info)
+{
+	static char getmask[] = "M.";
+
+	int err, wrote_bytes, read_bytes, tmo = 100;
+	unsigned char rx[BUFFER_MAX];
+	struct timeval now;
+	size_t len;
+
+	info->telem_mask = 0;
+
+	if (!(TELEM_IS_V3(info)))
+		return;
+
+	len = strlen(getmask);
+	err = usb_write_ii(compac, info->telemetry, getmask, len,
+				&wrote_bytes, C_REQUESTDETAILS);
+	if (err != LIBUSB_SUCCESS)
+		return;
+
+	gekko_usleep(info, MS2US(100));
+
+	read_bytes = 0;
+	rx[0] = '\0';
+	cgtime_real(&now);
+	err = usb_read_ii_timeout(compac, info->telemetry, (char *)rx, sizeof(rx),
+					&read_bytes, tmo, C_GETDETAILS);
+	if ((err == LIBUSB_SUCCESS)
+	||  (err == LIBUSB_ERROR_TIMEOUT && read_bytes > 0))
+	{
+		info->telem_mask = rx[0];
+	}
+}
+
 // check telemetry works and set it ready for mining
 static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 {
@@ -4521,17 +4555,13 @@ static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info
 
 	gsa1_set_led(compac, info, GSA1_LED_WORK);
 
+	if (TELEM_IS_V3(info))
+		get_telem_mask(compac, info);
+	else
+		info->telem_mask = 0;
+
 	return true;
 }
-
-// TODO: make a device+version indexed table when multiple telemetries exist
-#define TELEM_VIN 0
-#define TELEM_IIN 1
-#define TELEM_VOUT 2
-#define TELEM_IOUT 3
-#define TELEM_TEMP1 4
-#define TELEM_TEMP2 5
-#define TELEM_TACH 6
 
 static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 {
@@ -4568,17 +4598,67 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 	if ((err == LIBUSB_SUCCESS)
 	||  (err == LIBUSB_ERROR_TIMEOUT && read_bytes > 0))
 	{
-		if (read_bytes > TELEM_VIN)
+		if (TELEM_IS_V3(info))
 		{
+			if (TELEM_HAS_VIN(info) && (read_bytes > TELEM_VIN))
+				info->telem_vin = telem_tovinv2(rx[TELEM_VIN]);
+			else
+				info->telem_vin = 0;
+
+			if (TELEM_HAS_IIN(info) && (read_bytes > TELEM_IIN))
+				info->telem_iin = telem_toiinout(rx[TELEM_IIN], TELEM_HAS_HIAMP(info));
+			else
+				info->telem_iin = 0;
+
+			if (TELEM_HAS_VOUT(info) && (read_bytes > TELEM_VOUT))
+				info->telem_vout = telem_tovout(rx[TELEM_VOUT]);
+			else
+				info->telem_vout = 0;
+
+			if (TELEM_HAS_IOUT(info) && (read_bytes > TELEM_IOUT))
+				info->telem_iout = telem_toiinout(rx[TELEM_IOUT], true);
+			else
+				info->telem_iout = 0;
+
+			if (TELEM_HAS_TEMP1(info) && (read_bytes > TELEM_TEMP1))
+			{
+				info->telem_temp = telem_totemp(rx[TELEM_TEMP1]);
+				compac->temp = info->telem_temp;
+				// remember the last successful reading in case we lose telemetry
+				if (info->telem_temp > TELEM_INVTEMP)
+				{
+					info->telem_temp_last = info->telem_temp;
+					if (info->telem_temp_max < info->telem_temp)
+					{
+						info->telem_temp_max = info->telem_temp;
+						info->temp_maxt.tv_sec = now.tv_sec;
+						info->temp_maxt.tv_usec = now.tv_usec;
+					}
+				}
+			}
+			if (TELEM_HAS_TEMP2(info) && (read_bytes > TELEM_TEMP2))
+				info->telem_temp2 = telem_totemp(rx[TELEM_TEMP2]);
+			else
+				info->telem_temp2 = 0;
+
+			if (TELEM_HAS_TACH(info) && (read_bytes > TELEM_TACH))
+				info->telem_tach = telem_totach(rx[TELEM_TACH]);
+			else
+				info->telem_tach = 0;
+		}
+		else
+		{
+		 if (read_bytes > TELEM_VIN)
+		 {
 			if (TELEM_IS_V1(info))
 				info->telem_vin = telem_tovin(rx[TELEM_VIN]);
 			else if (TELEM_IS_V2(info))
 				info->telem_vin = telem_tovinv2(rx[TELEM_VIN]);
-		}
-		if (read_bytes > TELEM_VOUT)
+		 }
+		 if (read_bytes > TELEM_VOUT)
 			info->telem_vout = telem_tovout(rx[TELEM_VOUT]);
-		if (read_bytes > TELEM_TEMP1)
-		{
+		 if (read_bytes > TELEM_TEMP1)
+		 {
 			info->telem_temp = telem_totemp(rx[TELEM_TEMP1]);
 			compac->temp = info->telem_temp;
 			// remember the last successful reading in case we lose telemetry
@@ -4592,9 +4672,9 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 					info->temp_maxt.tv_usec = now.tv_usec;
 				}
 			}
-		}
-		if (TELEM_IS_V2(info))
-		{
+		 }
+		 if (TELEM_IS_V2(info))
+		 {
 			if (read_bytes > TELEM_IIN)
 			{
 				if (TELEM_VALUE(info) == 0)
@@ -4603,7 +4683,7 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 				}
 				else
 				{
-					// with V2.1 iin range is hi=false lo
+					// with V2.1 iin range is lo, hi=false
 					info->telem_iin = telem_toiinout(rx[TELEM_IIN], false);
 				}
 			}
@@ -4622,13 +4702,14 @@ static void get_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info)
 				if (read_bytes > TELEM_TEMP2)
 					info->telem_temp2 = telem_totemp(rx[TELEM_TEMP2]);
 			}
-		}
-		else
-		{
+		 }
+		 else
+		 {
 			info->telem_iin = 0;
 			info->telem_iout = 0;
 			info->telem_tach = 0;
 			info->telem_temp2 = 0;
+		 }
 		}
 	}
 	else
@@ -6689,10 +6770,26 @@ static void compac_statline(char *buf, size_t bufsiz, struct cgpu_info *compac)
 			{
 				snprintf(fan0, sizeof(fan0), "FAN:0rpm* ");
 			}
-
 			else if (opt_widescreen)
 			{
 				snprintf(fan0, sizeof(fan0), "FAN:%.0frpm ", info->telem_tach);
+			}
+		}
+		else if (TELEM_IS_V3(info))
+		{
+			if (TELEM_HAS_TEMP2(info))
+				snprintf(t2, sizeof(t2), "/%.0f", info->telem_temp2);
+
+			if (TELEM_HAS_TACH(info))
+			{
+				if (info->telem_tach == 0 && info->last_telem.tv_sec > 0)
+				{
+					snprintf(fan0, sizeof(fan0), "FAN:0rpm* ");
+				}
+				else if (opt_widescreen)
+				{
+					snprintf(fan0, sizeof(fan0), "FAN:%.0frpm ", info->telem_tach);
+				}
 			}
 		}
 
@@ -7289,8 +7386,12 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 		}
 		else if (info->asic_type == BM1362 || info->asic_type == BM1370)
 		{
-			bool canfan = TELEM_IS_V2_1(info);
-			
+			bool canfan = false;
+
+			if (TELEM_IS_V2_1(info)
+			||  (TELEM_IS_V3(info) && TELEM_HAS_TACH(info)))
+				canfan = true;
+
 			snprintf(replybuf, siz, "reset freq: 0-800 target: 0-800"
 						" lockfreq unlockfreq waitfactor: 0.01-2.0"
 						" require: 0.0-0.8 corev: 0-500%s zeromaxt",
@@ -7486,10 +7587,16 @@ static char *compac_api_set(struct cgpu_info *compac, char *option, char *settin
 	// set fan rpm %
 	if (strcasecmp(option, "setfan") == 0)
 	{
+		bool canfan = false;
+
+		if (TELEM_IS_V2_1(info)
+		||  (TELEM_IS_V3(info) && TELEM_HAS_TACH(info)))
+			canfan = true;
+
 		if ((info->ident != IDENT_GSA1 && info->ident != IDENT_GSA2)
-		||  (!TELEM_IS_V2_1(info)))
+		||  (!canfan))
 		{
-			snprintf(replybuf, siz, "setfan only for GSA1/2 V1.2");
+			snprintf(replybuf, siz, "setfan only for GSA1/2 V2.1/V3");
 			return replybuf;
 		}
 
