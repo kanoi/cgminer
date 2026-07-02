@@ -7126,6 +7126,7 @@ static struct api_data *compac_api_stats(struct cgpu_info *compac)
 	if (info->ident == IDENT_GSA1 || info->ident == IDENT_GSA2)
 	{
 		root = api_add_bool(root, "HasTelemetry", &info->has_telem, false);
+		root = api_add_int(root, "TelemetryMask", &info->telem_mask, false);
 		root = api_add_int(root, "CoremV", &info->telem_corev, false);
 		root = api_add_float(root, "Vin", &info->telem_vin, false);
 		root = api_add_float(root, "Vout", &info->telem_vout, false);
