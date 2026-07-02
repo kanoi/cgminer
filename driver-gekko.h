@@ -218,7 +218,7 @@ static int cur_attempt_1370[] = { 0, -24, -48, -72 };
 #define TELEM_TACH 6
 
 // Telemetry v3 mask info
-#define MAKE_MASK(_telem_val) (0x1 >> (_telem_val))
+#define MAKE_MASK(_telem_val) (0x1 << (_telem_val))
 
 #define TELEM_MASK_VIN MAKE_MASK(TELEM_VIN)
 #define TELEM_MASK_IIN MAKE_MASK(TELEM_IIN)
