@@ -228,6 +228,8 @@ static int cur_attempt_1370[] = { 0, -24, -48, -72 };
 #define TELEM_MASK_TEMP2 MAKE_MASK(TELEM_TEMP2)
 #define TELEM_MASK_TACH MAKE_MASK(TELEM_TACH)
 #define TELEM_MASK_HIAMP 0x80
+// to be complete
+#define TELEM_MASK_LOAMP 0x00
 
 #define TELEM_HAS(_info, _m) (((_info)->telem_mask) & (_m))
 
@@ -241,6 +243,11 @@ static int cur_attempt_1370[] = { 0, -24, -48, -72 };
 
 #define TELEM_HAS_HIAMP(_info) (TELEM_HAS((_info), (TELEM_MASK_HIAMP)))
 #define TELEM_HAS_LOAMP(_info) (!(TELEM_HAS_HIAMP(_info)))
+
+// V3 mask equivalent constants for V1 & V2
+#define TELEM_MASK_V1 (TELEM_MASK_VIN | TELEM_MASK_VOUT | TELEM_MASK_TEMP1)
+#define TELEM_MASK_V2_0 (TELEM_MASK_VIN | TELEM_MASK_IIN | TELEM_MASK_HIAMP | TELEM_MASK_VOUT | TELEM_MASK_IOUT | TELEM_MASK_TEMP1 | TELEM_MASK_TACH)
+#define TELEM_MASK_V2_1 (TELEM_MASK_VIN | TELEM_MASK_IIN | TELEM_MASK_LOAMP | TELEM_MASK_VOUT | TELEM_MASK_TEMP1 | TELEM_MASK_TEMP2 | TELEM_MASK_TACH)
 
 // BM1397 registers
 #define BM1397FREQ 0x08

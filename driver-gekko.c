@@ -4446,6 +4446,22 @@ static void get_telem_mask(struct cgpu_info *compac, struct COMPAC_INFO *info)
 
 	info->telem_mask = 0;
 
+	if (TELEM_IS_V1(info))
+	{
+		info->telem_mask = TELEM_MASK_V1;
+		return;
+	}
+	else if (TELEM_IS_V2_1(info))
+	{
+		info->telem_mask = TELEM_MASK_V2_1;
+		return;
+	}
+	else if (TELEM_IS_V2(info))
+	{
+		info->telem_mask = TELEM_MASK_V2_0;
+		return;
+	}
+
 	if (!(TELEM_IS_V3(info)))
 		return;
 
@@ -4555,10 +4571,7 @@ static bool enable_gsa1_telem(struct cgpu_info *compac, struct COMPAC_INFO *info
 
 	gsa1_set_led(compac, info, GSA1_LED_WORK);
 
-	if (TELEM_IS_V3(info))
-		get_telem_mask(compac, info);
-	else
-		info->telem_mask = 0;
+	get_telem_mask(compac, info);
 
 	return true;
 }
